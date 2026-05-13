@@ -98,7 +98,7 @@ class PWE_QR_Image_Controller {
 
         $value = isset($_GET['value']) ? sanitize_text_field(wp_unslash($_GET['value'])) : '';
         $label = isset($_GET['label']) ? sanitize_text_field(wp_unslash($_GET['label'])) : '';
-        $size  = isset($_GET['size']) ? absint($_GET['size']) : 200;
+        $size  = isset($_GET['size']) ? absint($_GET['size']) : 150;
         $logo  = isset($_GET['logo']) ? sanitize_text_field(wp_unslash($_GET['logo'])) : '';
         $sig   = isset($_GET['sig']) ? sanitize_text_field(wp_unslash($_GET['sig'])) : '';
 

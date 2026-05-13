@@ -96,48 +96,50 @@ class PWE_GF_QR_Addon extends GFFeedAddOn {
                 'description' => '
                 <details style="padding:12px 15px;background:#f6f7f7;border-left:4px solid #2271b1; margin-bottom:10px;">
                     <summary style="font-weight:bold;cursor:pointer;color:#000000;">How to use QR shortcodes</summary>
-                    <div style="margin-top:20px;">
 
-                        <strong>Standard shortcode format for notification message content:</strong><br><br>
+                    <div style="margin-top:16px;line-height:1.55;">
 
-                        Use this shortcode to display the QR code as an image inside a Gravity Forms notification message:<br>
-                        <code>' . esc_html($shortcode_img_example) . '</code><br><br>
+                        <strong>1. Gravity Forms notifications</strong><br>
+                        Use standard shortcodes in notification message content:<br>
+                        <code>' . esc_html($shortcode_img_example) . '</code> – displays QR image<br>
+                        <code>' . esc_html($shortcode_url_example) . '</code> – displays QR image URL<br>
+                        <code>[pwe_qr_url_encoded name="' . esc_html($feed_name) . '"]</code> – displays encoded QR URL<br><br>
 
-                        Use this shortcode to display only the QR image URL:<br>
-                        <code>' . esc_html($shortcode_url_example) . '</code><br><br>
-
-                        Optional size attribute:<br>
+                        Optional size:<br>
                         <code>[pwe_qr_img name="' . esc_html($feed_name) . '" size="150"]</code><br>
-                        <code>[pwe_qr_url name="' . esc_html($feed_name) . '" size="150"]</code><br><br>
+                        <code>[pwe_qr_url name="' . esc_html($feed_name) . '" size="150"]</code><br>
+                        <code>[pwe_qr_url_encoded name="' . esc_html($feed_name) . '" size="150"]</code><br><br>
 
-                        <hr style="margin:14px 0;">
+                        <hr style="margin:12px 0;">
 
-                        <strong>Curly-brace format for links and HTML attributes:</strong><br><br>
+                        <strong>2. Gravity Forms confirmations</strong><br>
+                        Use curly-brace tags inside confirmation messages, buttons, links, and HTML attributes.<br>
+                        No <code>form_id</code> or <code>entry_id</code> is required because Gravity Forms provides the current entry automatically.<br><br>
 
-                        Use this format inside links or HTML attributes when you need a normal QR image URL:<br>
+                        QR image URL:<br>
                         <code>' . esc_html($merge_tag_url_example) . '</code><br><br>
 
-                        Use this encoded format when placing the QR image URL as a parameter inside another URL, for example <code>qrcode=...</code>:<br>
+                        Encoded QR URL, recommended for external badge links:<br>
                         <code>' . esc_html($merge_tag_url_encoded_example) . '</code><br><br>
 
-                        Image version:<br>
+                        QR image:<br>
                         <code>' . esc_html($merge_tag_img_example) . '</code><br><br>
 
-                        Optional size attribute:<br>
+                        Optional size:<br>
                         <code>{pwe_qr_img name=' . esc_html($feed_name) . ' size=150}</code><br>
                         <code>{pwe_qr_url name=' . esc_html($feed_name) . ' size=150}</code><br>
                         <code>{pwe_qr_url_encoded name=' . esc_html($feed_name) . ' size=150}</code><br><br>
 
-                        Example with a normal QR URL:<br>
-                        <code>&lt;a href="' . esc_html($merge_tag_url_example) . '"&gt;Open QR code&lt;/a&gt;</code><br><br>
-
-                        Example inside a badge generator link:<br>
+                        Example badge generator link:<br>
                         <code>&lt;a href="https://warsawexpo.eu/assets/badge/local/loading.html?category=YOUR_CATEGORY&amp;getname=YOUR_NAME&amp;firma=YOUR_COMPANY&amp;qrcode=' . esc_html($merge_tag_url_encoded_example) . '"&gt;Generate badge&lt;/a&gt;</code><br><br>
 
-                        The value after <code>name=</code> must be exactly the same as the <strong>Feed Name</strong> below.
+                        <hr style="margin:12px 0;">
+
+                        <strong>Important:</strong><br>
+                        The value after <code>name=</code> must exactly match the <strong>Feed Name</strong> below.<br>
+                        For badge generator URLs, use <code>' . esc_html($merge_tag_url_encoded_example) . '</code>.
                     </div>
-                </details>
-',
+                </details>',
                 'fields'      => [
                     [
                         'label'    => 'Feed Name',
@@ -154,7 +156,7 @@ class PWE_GF_QR_Addon extends GFFeedAddOn {
                         'label'         => 'QR Code Size (px)',
                         'type'          => 'text',
                         'name'          => 'qrcodeSize',
-                        'default_value' => '200',
+                        'default_value' => '150',
                     ],
                     [
                         'label'         => 'Logo URL (placed in the middle of QR)',

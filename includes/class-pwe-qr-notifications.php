@@ -111,7 +111,7 @@ class PWE_QR_Notifications {
 
                 $shortcode_type = sanitize_key($matches[2]);
                 $name = sanitize_text_field($matches[3]);
-                $size = isset($matches[4]) && $matches[4] !== '' ? absint($matches[4]) : 200;
+                $size = isset($matches[4]) && $matches[4] !== '' ? absint($matches[4]) : 150;
 
                 $data = $this->qr->get_qr_data_for_feed($name, $form_id, $entry, $size);
 

@@ -80,7 +80,7 @@ class PWE_QR_Entry_Meta {
             $qr_url = $this->image_controller->build_qr_image_url(
                 $data['value'],
                 $data['label'] ?? '',
-                $data['size'] ?? 200,
+                $data['size'] ?? 150,
                 $data['logo_url'] ?? ''
             );
 

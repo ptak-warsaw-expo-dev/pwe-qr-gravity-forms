@@ -45,17 +45,17 @@ class PWE_QR_Generator {
      *
      * @param string $value The value to encode in the QR code.
      * @param string $label An optional label to display under the QR code.
-     * @param int    $size The size of the QR code in pixels (default 200).
+     * @param int    $size The size of the QR code in pixels (default 150).
      * @param string $logo_url An optional URL or path to a logo image to overlay on the center of the QR code.
      *
      * @return string A PNG image data as a binary string, or an empty string on failure.
      */
-    public function generate_png($value, $label, $size = 200, $logo_url = '') {
+    public function generate_png($value, $label, $size = 150, $logo_url = '') {
         require_once plugin_dir_path(__FILE__) . '../phpqrcode/qrlib.php';
 
         $label = trim((string) $label);
         $has_label = ($label !== '');
-        $size = absint($size) ?: 200;
+        $size = absint($size) ?: 150;
 
         // Generate raw QR with high error correction (H = 30%)
         ob_start();
@@ -291,7 +291,7 @@ class PWE_QR_Generator {
      *
      * @return array|null An array with 'value', 'label', 'size', and 'logo_url' keys, or null if not found.
      */
-    public function get_qr_data_for_feed($name, $form_id, $entry = [], $size = 200) {
+    public function get_qr_data_for_feed($name, $form_id, $entry = [], $size = 150) {
         if (!class_exists('GFAPI')) {
             return null;
         }
@@ -351,7 +351,7 @@ class PWE_QR_Generator {
             return [
                 'value'    => $this->runtime_cache[$cache_key],
                 'label'    => $label,
-                'size'     => $final_size ?: 200,
+                'size'     => $final_size ?: 150,
                 'logo_url' => $logo_url,
             ];
         }
