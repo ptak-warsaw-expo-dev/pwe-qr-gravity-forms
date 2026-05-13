@@ -77,6 +77,25 @@ class PWE_QR_Image_Controller {
             return;
         }
 
+        $allowed_origins = [
+            'https://warsawexpo.eu',
+            'https://www.warsawexpo.eu',
+        ];
+
+        $origin = $_SERVER['HTTP_ORIGIN'] ?? '';
+
+        if (in_array($origin, $allowed_origins, true)) {
+            header('Access-Control-Allow-Origin: ' . $origin);
+            header('Vary: Origin');
+            header('Access-Control-Allow-Methods: GET, OPTIONS');
+            header('Access-Control-Allow-Headers: Content-Type');
+        }
+
+        if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
+            status_header(204);
+            exit;
+        }
+
         $value = isset($_GET['value']) ? sanitize_text_field(wp_unslash($_GET['value'])) : '';
         $label = isset($_GET['label']) ? sanitize_text_field(wp_unslash($_GET['label'])) : '';
         $size  = isset($_GET['size']) ? absint($_GET['size']) : 200;

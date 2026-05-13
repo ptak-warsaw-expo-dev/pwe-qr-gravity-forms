@@ -84,12 +84,34 @@ class PWE_QR_Notifications {
         $attach_enabled = !empty($notification['pwe_attach_qr_image']);
         $seen = [];
 
+        /*
+        * Supports:
+        *
+        * [pwe_qr_url name="badge"]
+        * [pwe_qr_img name="badge" size="300"]
+        *
+        * {pwe_qr_url name=badge}
+        * {pwe_qr_img name=badge size=300}
+        *
+        * Also supports quoted variants if needed:
+        * {pwe_qr_url name="badge"}
+        */
+        $pattern = '/(\[|\{)(pwe_qr_url|pwe_qr_url_encoded|pwe_qr_img)\s+name=(?:"|&quot;|\')?([^"\'}\]\s]+)(?:"|&quot;|\')?(?:\s+size=(?:"|&quot;|\')?(\d+)(?:"|&quot;|\')?)?\s*(\]|\})/';
+
         $notification['message'] = preg_replace_callback(
-            '/\[(pwe_qr_url|pwe_qr_img)\s+name="([^"]+)"(?:\s+size="(\d+)")?\]/',
+            $pattern,
             function ($matches) use ($form_id, $entry, $attach_enabled, &$seen) {
-                $shortcode_type = sanitize_key($matches[1]);
-                $name = sanitize_text_field($matches[2]);
-                $size = isset($matches[3]) ? absint($matches[3]) : 200;
+                $opening = $matches[1];
+                $closing = $matches[5];
+
+                // Make sure square brackets and curly braces are not mixed.
+                if (($opening === '[' && $closing !== ']') || ($opening === '{' && $closing !== '}')) {
+                    return $matches[0];
+                }
+
+                $shortcode_type = sanitize_key($matches[2]);
+                $name = sanitize_text_field($matches[3]);
+                $size = isset($matches[4]) && $matches[4] !== '' ? absint($matches[4]) : 200;
 
                 $data = $this->qr->get_qr_data_for_feed($name, $form_id, $entry, $size);
 
@@ -106,6 +128,10 @@ class PWE_QR_Notifications {
 
                 if ($shortcode_type === 'pwe_qr_url') {
                     return esc_url($image_url);
+                }
+
+                if ($shortcode_type === 'pwe_qr_url_encoded') {
+                    return rawurlencode($image_url);
                 }
 
                 // Prepare attachment only once per shortcode name/size.
@@ -157,6 +183,7 @@ class PWE_QR_Notifications {
                     'name'    => 'pwe_attach_qr_image',
                     'label'   => 'QR Code Image',
                     'type'    => 'checkbox',
+                    'default_value' => '1',
                     'choices' => [
                         [
                             'label' => 'Add a QR-Code as Image to the Notification',
