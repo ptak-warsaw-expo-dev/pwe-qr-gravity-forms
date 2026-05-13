@@ -36,9 +36,11 @@ The plugin allows you to create QR code feeds inside Gravity Forms, use QR codes
 
 1. Upload the plugin folder to:
 
+```text
 wp-content/plugins/pwe-qr-gravity-forms
+```
 
-2. Activate the plugin in the WordPress admin panel
+2. Activate the plugin in the WordPress admin panel  
 3. Make sure Gravity Forms is installed and active
 
 ---
@@ -47,7 +49,9 @@ wp-content/plugins/pwe-qr-gravity-forms
 
 After activation, open a Gravity Forms form and go to:
 
+```text
 Settings → PWE QR
+```
 
 Create a new QR feed and configure:
 
@@ -56,7 +60,7 @@ Create a new QR feed and configure:
 - QR Code Size
 - Logo URL
 
-The Feed Name is required for all shortcodes and merge tags.
+The **Feed Name** is required for all shortcodes and merge tags.
 
 ---
 
@@ -73,16 +77,22 @@ The plugin supports two formats:
 
 Display QR code as image:
 
+```text
 [pwe_qr_img name="your_feed_name"]
+```
 
 Display QR image URL:
 
+```text
 [pwe_qr_url name="your_feed_name"]
+```
 
 Optional size:
 
+```text
 [pwe_qr_img name="your_feed_name" size="150"]
 [pwe_qr_url name="your_feed_name" size="150"]
+```
 
 ---
 
@@ -90,21 +100,29 @@ Optional size:
 
 QR image URL:
 
+```text
 {pwe_qr_url name=your_feed_name}
+```
 
 Encoded QR URL (for use inside another URL):
 
+```text
 {pwe_qr_url_encoded name=your_feed_name}
+```
 
 QR image:
 
+```text
 {pwe_qr_img name=your_feed_name}
+```
 
 Optional size:
 
+```text
 {pwe_qr_img name=your_feed_name size=150}
 {pwe_qr_url name=your_feed_name size=150}
 {pwe_qr_url_encoded name=your_feed_name size=150}
+```
 
 ---
 
@@ -112,19 +130,23 @@ Optional size:
 
 Simple QR link:
 
-<a href="{pwe_qr_url name=your_feed_name}">Open QR code</a>
+```markdown
+[Open QR code]({pwe_qr_url name=your_feed_name})
+```
 
 QR inside external URL (encoded):
 
-<a href="https://domain/file.html?category=YOUR_CATEGORY&getname=YOUR_NAME&company=YOUR_COMPANY&qrcode={pwe_qr_url_encoded name=your_feed_name}">
+```html
+<a href="https://warsawexpo.eu/assets/badge/local/loading.html?category=YOUR_CATEGORY&getname=YOUR_NAME&firma=YOUR_COMPANY&qrcode={pwe_qr_url_encoded name=your_feed_name}">
     Generate badge
 </a>
+```
 
 ---
 
 ### Important
 
-The value of name= must exactly match the Feed Name configured in Gravity Forms.
+The value of `name=` must exactly match the **Feed Name** configured in Gravity Forms.
 
 ---
 
@@ -132,7 +154,9 @@ The value of name= must exactly match the Feed Name configured in Gravity Forms.
 
 In the Gravity Forms notification settings, enable:
 
+```text
 Add a QR-Code as Image to the Notification
+```
 
 When enabled, the generated QR code will be attached to the email as a PNG file.
 
@@ -144,15 +168,21 @@ After form submission, the plugin saves the QR image URL into entry metadata.
 
 Meta key:
 
+```text
 pwe_qr_code_url
+```
 
 Example value:
 
+```text
 https://example.com/?pwe_qr_img=1&value=...&label=...&size=200&sig=...
+```
 
 Stored in:
 
+```text
 wp_gf_entry_meta
+```
 
 ---
 
@@ -164,7 +194,9 @@ The plugin uses an HMAC signature to validate requests before generating the ima
 
 Example:
 
+```text
 https://example.com/?pwe_qr_img=1&value=...&label=...&size=200&sig=...
+```
 
 ---
 
@@ -180,6 +212,7 @@ When duplicating a Gravity Form:
 
 ## Plugin Structure
 
+```text
 pwe-qr-gravity-forms/
 ├── pwe-qr-gravity-forms.php
 ├── includes/
@@ -193,24 +226,19 @@ pwe-qr-gravity-forms/
 ├── phpqrcode/
 ├── plugin-update-checker/
 └── assets/
+```
 
 ---
 
 ## Main Classes
 
-PWE_QR_Gravity_Forms – Initializes all core components
-
-PWE_GF_QR_Addon – Handles feed configuration and duplication
-
-PWE_QR_Generator – Generates QR values and images
-
-PWE_QR_Notifications – Processes shortcodes and email attachments
-
-PWE_QR_Entry_Meta – Stores QR URL in entry metadata
-
-PWE_QR_Image_Controller – Handles signed URL validation and image output
-
-PWE_QR_Updater – Handles GitHub-based updates
+- **PWE_QR_Gravity_Forms** – Initializes all core components  
+- **PWE_GF_QR_Addon** – Handles feed configuration and duplication  
+- **PWE_QR_Generator** – Generates QR values and images  
+- **PWE_QR_Notifications** – Processes shortcodes and email attachments  
+- **PWE_QR_Entry_Meta** – Stores QR URL in entry metadata  
+- **PWE_QR_Image_Controller** – Handles signed URL validation and image output  
+- **PWE_QR_Updater** – Handles GitHub-based updates  
 
 ---
 
