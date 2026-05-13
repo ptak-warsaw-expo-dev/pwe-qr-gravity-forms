@@ -131,13 +131,13 @@ Optional size:
 Simple QR link:
 
 ```markdown
-[Open QR code]({pwe_qr_url name=your_feed_name})
+<a href="{pwe_qr_url name=your_feed_name}">Open QR code</a>
 ```
 
 QR inside external URL (encoded):
 
 ```html
-<a href="https://warsawexpo.eu/assets/badge/local/loading.html?category=YOUR_CATEGORY&getname=YOUR_NAME&firma=YOUR_COMPANY&qrcode={pwe_qr_url_encoded name=your_feed_name}">
+<a href="https://domain.com/index.html?category=YOUR_CATEGORY&getname=YOUR_NAME&firma=YOUR_COMPANY&qrcode={pwe_qr_url_encoded name=your_feed_name}">
     Generate badge
 </a>
 ```
