@@ -47,7 +47,9 @@ if (!class_exists('PWE_QR_Gravity_Forms')) {
          */
         private function __construct() {
             // Autoupdate
-            new PWE_QR_Updater();
+            add_action('init', function() {
+                new PWE_QR_Updater();
+            });
 
             // Create the QR generator service.
             $this->qr = new PWE_QR_Generator();

@@ -40,14 +40,14 @@ class PWE_QR_Updater {
      * Setting the auto-update mechanism
      */
     private function setup_updater() {
-        $checker_file = plugin_dir_path( __FILE__ ) . 'plugin-update-checker/plugin-update-checker.php';
+        $checker_file = PWE_QR_GF_PATH . 'plugin-update-checker/plugin-update-checker.php';
 
         if ( file_exists( $checker_file ) ) {
             require_once $checker_file;
 
             $updateChecker = Puc_v4_Factory::buildUpdateChecker(
                 'https://github.com/ptak-warsaw-expo-dev/pwe-qr-gravity-forms',
-                __FILE__,
+                PWE_QR_GF_FILE,
                 'pwe-qr-gravity-forms'
             );
 
