@@ -4,7 +4,7 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
-class PWE_QR_Shortcodes {
+class PWE_QR_Confirmations {
 
     /**
      * QR generator helper.

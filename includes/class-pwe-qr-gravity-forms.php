@@ -60,8 +60,8 @@ if (!class_exists('PWE_QR_Gravity_Forms')) {
             // Notification shortcodes and attachments.
             new PWE_QR_Notifications($this->qr, $this->image_controller);
 
-            // QR shortcodes on confirmation pages and normal WordPress pages.
-            new PWE_QR_Shortcodes($this->qr, $this->image_controller);
+            // QR shortcodes on confirmation.
+            new PWE_QR_Confirmations($this->qr, $this->image_controller);
 
             // Save QR image URL into Gravity Forms entry meta.
             new PWE_QR_Entry_Meta($this->qr, $this->image_controller);

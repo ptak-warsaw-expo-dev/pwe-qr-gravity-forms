@@ -352,7 +352,7 @@ pwe-qr-gravity-forms/
 │   ├── class-pwe-qr-generator.php
 │   ├── class-pwe-gf-addon.php
 │   ├── class-pwe-qr-notifications.php
-│   ├── class-pwe-qr-shortcodes.php
+│   ├── class-pwe-qr-confirmations.php
 │   ├── class-pwe-qr-entry-meta.php
 │   ├── class-pwe-qr-image-controller.php
 │   └── class-pwe-qr-updater.php
@@ -368,42 +368,11 @@ pwe-qr-gravity-forms/
 - **PWE_QR_Gravity_Forms** – Initializes all core components
 - **PWE_GF_QR_Addon** – Handles feed configuration and duplication
 - **PWE_QR_Generator** – Generates QR values and images
-- **PWE_QR_Notifications** – Processes notification shortcodes and email attachments
-- **PWE_QR_Shortcodes** – Processes QR tags inside Gravity Forms confirmation messages
+- **PWE_QR_Notifications** – Processes notification confirmations and email attachments
+- **PWE_QR_Confirmations** – Processes QR tags inside Gravity Forms confirmation messages
 - **PWE_QR_Entry_Meta** – Stores QR URL in entry metadata
 - **PWE_QR_Image_Controller** – Handles signed URL validation and image output
 - **PWE_QR_Updater** – Handles GitHub-based updates
-
----
-
-## Supported Contexts
-
-| Context | Supported format | Requires form_id / entry_id |
-|---|---|---|
-| Gravity Forms notifications | `[pwe_qr_img]`, `[pwe_qr_url]`, `[pwe_qr_url_encoded]` | No |
-| Gravity Forms confirmations | `{pwe_qr_img}`, `{pwe_qr_url}`, `{pwe_qr_url_encoded}` | No |
-| HTML links and attributes inside confirmations | Curly-brace tags recommended | No |
-| WordPress pages/posts | Not supported | Not applicable |
-
----
-
-## Changelog
-
-### 1.0.4
-
-- Added QR tag support for Gravity Forms confirmation messages
-- Added support for QR badge generator links inside confirmation messages
-- Added `{pwe_qr_url_encoded name=...}` support for encoded QR image URLs
-- Added new `PWE_QR_Shortcodes` class for confirmation processing
-- Improved documentation for curly-brace QR tags and encoded QR URLs
-- Removed unnecessary WordPress page/post shortcode logic from the documentation
-
-### 1.0.3
-
-- Added QR logo overlay support
-- Added QR image URL storage in Gravity Forms entry metadata
-- Added QR feed duplication support when duplicating Gravity Forms
-- Added GitHub-based update handling
 
 ---
 

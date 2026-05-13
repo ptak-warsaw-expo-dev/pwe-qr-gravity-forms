@@ -26,7 +26,7 @@ require_once PWE_QR_GF_PATH . 'includes/class-pwe-gf-addon.php';
 require_once PWE_QR_GF_PATH . 'includes/class-pwe-qr-image-controller.php';
 require_once PWE_QR_GF_PATH . 'includes/class-pwe-qr-notifications.php';
 require_once PWE_QR_GF_PATH . 'includes/class-pwe-qr-entry-meta.php';
-require_once PWE_QR_GF_PATH . 'includes/class-pwe-qr-shortcodes.php';
+require_once PWE_QR_GF_PATH . 'includes/class-pwe-qr-confirmations.php';
 require_once PWE_QR_GF_PATH . 'includes/class-pwe-qr-updater.php';
 
 require_once PWE_QR_GF_PATH . 'includes/class-pwe-qr-gravity-forms.php';
