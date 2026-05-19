@@ -346,7 +346,9 @@ class PWE_QR_Generator {
                 : (!empty($meta['qr_size']) ? absint($meta['qr_size']) : absint($size));
 
             // Logo URL
-            $logo_url = $meta['logoUrl'] ?? '';
+            $logo_url = !empty($meta['logoUrl'])
+                ? $meta['logoUrl']
+                : '/doc/favicon-color.webp';
 
             return [
                 'value'    => $this->runtime_cache[$cache_key],

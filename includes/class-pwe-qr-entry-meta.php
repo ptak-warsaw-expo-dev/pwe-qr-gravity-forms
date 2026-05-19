@@ -26,6 +26,9 @@ class PWE_QR_Entry_Meta {
 
         // Save QR image URL into Gravity Forms entry meta.
         add_action('gform_after_submission', [$this, 'save_qr_code_link_to_entry_meta'], 10, 2);
+
+        // Render QR code in entry detail page.
+        add_action('gform_entry_detail_sidebar_middle', [$this, 'render_qr_in_entry_detail'], 10, 2);
     }
 
     /**
@@ -94,5 +97,58 @@ class PWE_QR_Entry_Meta {
             // Save only the first active QR feed into pwe_qr_code_url.
             break;
         }
+    }
+
+    /**
+     * Render QR code in Gravity Forms entry detail page.
+     *
+     * @param array $form
+     * @param array $entry
+     *
+     * @return void
+     */
+    public function render_qr_in_entry_detail($form, $entry) {
+
+        $entry_id = absint($entry['id'] ?? 0);
+
+        if (!$entry_id) {
+            return;
+        }
+
+        $qr_url = gform_get_meta($entry_id, 'pwe_qr_code_url');
+
+        if (empty($qr_url)) {
+            echo '<p>QR code not generated.</p>';
+            return;
+        }
+
+        echo '
+        <style>
+            .postbox-container {
+                display: flex;
+                flex-direction: column-reverse;
+            }
+            .entry-pwe-qr-code {
+                background:#fff;
+                border:1px solid #ddd;
+                padding:12px;
+                border-radius:6px;
+                margin-bottom:15px;
+                text-align: center;
+            }
+            .entry-pwe-qr-code h3 {
+                margin-top: 0;
+            }
+            .entry-pwe-qr-code img {
+                max-width:180px;
+                height:auto;
+            }
+        </style>';
+
+        echo '
+        <div class="entry-pwe-qr-code">
+            <h3>QR Code</h3>
+            <img src="' . esc_url($qr_url) . '" alt="QR Code">
+        </div>';
     }
 }
