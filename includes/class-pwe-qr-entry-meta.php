@@ -83,14 +83,25 @@ class PWE_QR_Entry_Meta {
             $qr_url = $this->image_controller->build_qr_image_url(
                 $data['value'],
                 $data['label'] ?? '',
-                $data['size'] ?? 150,
+                $data['size'] ?? 200,
                 $data['logo_url'] ?? ''
             );
 
+            $qr_url_encoded = rawurlencode($qr_url);
+
+            // Save the QR code URL into entry meta
             gform_update_meta(
                 $entry_id,
                 'pwe_qr_code_url',
                 esc_url_raw($qr_url),
+                $form_id
+            );
+
+            // Save the encoded QR code URL into entry meta
+            gform_update_meta(
+                $entry_id,
+                'pwe_qr_code_url_encoded',
+                $qr_url_encoded,
                 $form_id
             );
 

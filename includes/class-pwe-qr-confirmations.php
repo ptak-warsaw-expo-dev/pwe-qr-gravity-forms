@@ -37,9 +37,9 @@ class PWE_QR_Confirmations {
      * {pwe_qr_img name=badge}
      *
      * Optional size:
-     * {pwe_qr_url name=badge size=150}
-     * {pwe_qr_url_encoded name=badge size=150}
-     * {pwe_qr_img name=badge size=150}
+     * {pwe_qr_url name=badge size=200}
+     * {pwe_qr_url_encoded name=badge size=200}
+     * {pwe_qr_img name=badge size=200}
      *
      * Also supports square-bracket format inside confirmations:
      * [pwe_qr_url name="badge"]
@@ -112,7 +112,7 @@ class PWE_QR_Confirmations {
 
                 $type = sanitize_key($matches[2]);
                 $name = sanitize_text_field($matches[3]);
-                $size = !empty($matches[4]) ? absint($matches[4]) : 150;
+                $size = !empty($matches[4]) ? absint($matches[4]) : 200;
 
                 return $this->render_qr($type, $name, $form_id, $entry, $size);
             },
@@ -131,7 +131,7 @@ class PWE_QR_Confirmations {
      *
      * @return string
      */
-    private function render_qr($type, $name, $form_id, $entry, $size = 150) {
+    private function render_qr($type, $name, $form_id, $entry, $size = 200) {
         $data = $this->qr->get_qr_data_for_feed($name, $form_id, $entry, $size);
 
         if (!$data) {

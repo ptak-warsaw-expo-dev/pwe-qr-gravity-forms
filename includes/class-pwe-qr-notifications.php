@@ -111,7 +111,7 @@ class PWE_QR_Notifications {
 
                 $shortcode_type = sanitize_key($matches[2]);
                 $name = sanitize_text_field($matches[3]);
-                $size = isset($matches[4]) && $matches[4] !== '' ? absint($matches[4]) : 150;
+                $size = isset($matches[4]) && $matches[4] !== '' ? absint($matches[4]) : 200;
 
                 $data = $this->qr->get_qr_data_for_feed($name, $form_id, $entry, $size);
 
@@ -176,18 +176,42 @@ class PWE_QR_Notifications {
      * @return array
      */
     public function add_notification_settings_fields($fields, $notification) {
+
+        $form_id = absint(rgget('id'));
+
+        $has_qr_feed = false;
+
+        if ($form_id && class_exists('GFAPI')) {
+            $feeds = GFAPI::get_feeds(null, $form_id, 'pwe_qr');
+
+            if (!empty($feeds)) {
+                foreach ($feeds as $feed) {
+                    if (!empty($feed['is_active'])) {
+                        $has_qr_feed = true;
+                        break;
+                    }
+                }
+            }
+        }
+
+        // Add field if feed are created
+        if (!$has_qr_feed) {
+            return $fields;
+        }
+
         $fields[] = [
             'title'  => 'PWE QR Gravity Forms',
             'fields' => [
                 [
-                    'name'    => 'pwe_attach_qr_image',
-                    'label'   => 'QR Code Image',
-                    'type'    => 'checkbox',
+                    'name'          => 'pwe_attach_qr_image',
+                    'label'         => 'QR Code Image',
+                    'type'          => 'checkbox',
                     'default_value' => '1',
-                    'choices' => [
+                    'choices'       => [
                         [
-                            'label' => 'Add a QR-Code as Image to the Notification',
-                            'name'  => 'pwe_attach_qr_image',
+                            'label'       => 'Add a QR-Code as Image to the Notification',
+                            'name'        => 'pwe_attach_qr_image',
+                            'isSelected'  => true,
                         ],
                     ],
                 ],

@@ -156,7 +156,7 @@ class PWE_GF_QR_Addon extends GFFeedAddOn {
                         'label'         => 'QR Code Size (px)',
                         'type'          => 'text',
                         'name'          => 'qrcodeSize',
-                        'default_value' => '150',
+                        'default_value' => '200',
                     ],
                     [
                         'label'         => 'Logo URL (placed in the middle of QR)',
