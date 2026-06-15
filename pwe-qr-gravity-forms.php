@@ -3,7 +3,7 @@
  * Plugin Name: PWE QR Gravity Forms
  * Plugin URI: https://github.com/ptak-warsaw-expo-dev/pwe-qr-gravity-forms
  * Description: Generate and attach QR codes for Gravity Forms entries, notifications, and entry metadata.
- * Version: 1.0.5
+ * Version: 1.0.6
  * Author: Anton Melnychuk
  * Author URI: https://github.com/antonmelnychuk1
  * License: GPL v2 or later
