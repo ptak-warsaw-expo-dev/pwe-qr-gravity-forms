@@ -33,7 +33,7 @@ class PWE_QR_Generator {
 
         // Generate random part if not provided
         if (empty($random)) {
-            $random = 'RND' . wp_rand(10000, 99999);
+            $random = 'rnd' . wp_rand(10000, 99999);
         }
 
         // Final QR value

@@ -198,7 +198,7 @@ class PWE_GF_QR_Addon extends GFFeedAddOn {
 
         // Generate new random if missing
         if (empty($random)) {
-            $random = 'RND' . wp_rand(10000, 99999);
+            $random = 'rnd' . wp_rand(10000, 99999);
         }
 
         // Store QR structure parts
