@@ -206,12 +206,12 @@ class PWE_QR_Notifications {
                     'name'          => 'pwe_attach_qr_image',
                     'label'         => 'QR Code Image',
                     'type'          => 'checkbox',
-                    'default_value' => '1',
+                    // 'default_value' => '1',
                     'choices'       => [
                         [
                             'label'       => 'Add a QR-Code as Image to the Notification',
                             'name'        => 'pwe_attach_qr_image',
-                            'isSelected'  => true,
+                            'isSelected'  => false,
                         ],
                     ],
                 ],
@@ -231,23 +231,9 @@ class PWE_QR_Notifications {
      */
     public function save_notification_checkbox($notification, $form) {
 
-        $form_title = $form['title'] ?? '';
-        $notification_name = $notification['name'] ?? '';
-        $message = $notification['message'] ?? '';
+        $value = rgpost('pwe_attach_qr_image');
 
-        // Check if the form contains "Rejestracja wystawców (badge)"
-        $is_badge_form = stripos($form_title, 'Rejestracja wystawców (badge)') !== false;
-
-        // Check if the message contains "Dziękujemy za rejestrację"
-        $has_thank_you = stripos($message, 'Dziękujemy za rejestrację') !== false;
-
-        if ($is_badge_form && $has_thank_you) {
-            // Force QR Disable
-            $notification['pwe_attach_qr_image'] = 0;
-        } else {
-            // Standard behavior
-            $notification['pwe_attach_qr_image'] = rgpost('pwe_attach_qr_image') ? 1 : 0;
-        }
+        $notification['pwe_attach_qr_image'] = !empty($value) ? 1 : 0;
 
         return $notification;
     }

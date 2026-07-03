@@ -12,7 +12,7 @@ class PWE_GF_QR_Addon extends GFFeedAddOn {
     protected $_min_gravityforms_version = '2.5';
     protected $_slug = 'pwe_qr';
     protected $_path = 'pwe-qr-gravity-forms/pwe-qr-gravity-forms.php';
-    protected $_full_path = __FILE__;
+    protected $_full_path = PWE_QR_GF_FILE;
     protected $_title = 'PWE QR';
     protected $_short_title = 'GF QR Code (NEW)';
 
@@ -23,7 +23,32 @@ class PWE_GF_QR_Addon extends GFFeedAddOn {
     }
 
     /**
-     * Define the columns to display in the feed list.
+     * Register admin styles used by this add-on on the Gravity Forms settings screen.
+     *
+     * Gravity Forms Add-On Framework loads styles returned by this method automatically,
+     * so there is no need to use admin_head or a manual wp_enqueue_scripts hook here.
+     *
+     * @return array
+     */
+    public function styles() {
+        $styles = array(
+            array(
+                'handle'  => 'pwe-qr-gravity-forms-admin',
+                'src'     => $this->get_base_url() . '/assets/admin/css/feed-settings.css',
+                'version' => $this->_version,
+                'enqueue' => array(
+                    array(
+                        'admin_page' => array( 'form_settings' ),
+                    ),
+                ),
+            ),
+        );
+
+        return array_merge( parent::styles(), $styles );
+    }
+
+    /**
+     * Define columns displayed on the QR feed list.
      *
      * @return array
      */
@@ -36,42 +61,46 @@ class PWE_GF_QR_Addon extends GFFeedAddOn {
     }
 
     /**
-     * Get the value for the "QR Name" column in the feed list.
-     * Tries to retrieve 'feedName' first, then falls back to 'qr_name'.
+     * Return the feed name displayed in the feed list.
      *
-     * @param array $feed The feed data.
+     * Older feeds may still use qr_name, so feedName is checked first and qr_name is kept
+     * as a backward-compatible fallback.
      *
-     * @return string The feed name to display in the column, or '(no name)' if not set.
+     * @param array $feed Feed data from Gravity Forms.
+     *
+     * @return string
      */
     public function get_column_value_feedName($feed) {
         return $feed['meta']['feedName'] ?? $feed['meta']['qr_name'] ?? '(no name)';
     }
 
     /**
-     * Get the value for the "Label" column in the feed list.
-     * Tries to retrieve 'qrcodeLabel' first, then falls back to 'qr_label'.
+     * Return the QR label displayed in the feed list.
      *
-     * @param array $feed The feed data.
+     * @param array $feed Feed data from Gravity Forms.
      *
-     * @return string The label to display in the column, or '-' if not set.
+     * @return string
      */
     public function get_column_value_qrcodeLabel($feed) {
         return $feed['meta']['qrcodeLabel'] ?? $feed['meta']['qr_label'] ?? '-';
     }
 
     /**
-     * Show active status as "Aktywny" or "Nieaktywny" in the feed list.
+     * Return a readable active/inactive status for the feed list.
      *
-     * @param array $feed The feed data.
+     * @param array $feed Feed data from Gravity Forms.
      *
-     * @return string "Aktywny" if active, otherwise "Nieaktywny".
+     * @return string
      */
     public function get_column_value_is_active($feed) {
         return !empty($feed['is_active']) ? 'Aktywny' : 'Nieaktywny';
     }
 
     /**
-     * Define custom feed settings fields for the QR code feed.
+     * Define feed settings fields for the QR feed.
+     *
+     * qrcodeCustomKey1 and qrcodeCustomKey2 are UI helper fields. They are synchronized
+     * with qrcodeFields[0].custom_key and qrcodeFields[1].custom_key during save.
      *
      * @return array
      */
@@ -117,7 +146,7 @@ class PWE_GF_QR_Addon extends GFFeedAddOn {
                         <hr style="margin:12px 0;">
 
                         <strong>2. Gravity Forms confirmations</strong><br>
-                        Use curly-brace tags inside links, and HTML attributes.<br><br>
+                        Use curly-brace tags inside links and HTML attributes.<br><br>
 
                         QR image URL:<br>
                         <code>' . esc_html($merge_tag_url_example) . '</code><br><br>
@@ -163,54 +192,93 @@ class PWE_GF_QR_Addon extends GFFeedAddOn {
                         'type'          => 'text',
                         'name'          => 'logoUrl',
                         'default_value' => '/doc/favicon-color.webp',
-                        'description'   => 'Path to the logotype',
-                    ]
+                        'description'   => 'Path to the logo file.',
+                    ],
+                    [
+                        'label'         => 'QR custom_key 1',
+                        'type'          => 'text',
+                        'name'          => 'qrcodeCustomKey1',
+                        'default_value' => $this->get_qrcode_custom_key_for_field(0),
+                        'class'         => 'pwe-qr-custom-key-field pwe-qr-custom-key-field-first',
+                        'readonly'      => true,
+                        'description'   => $this->get_qrcode_custom_key_description(0),
+                    ],
+                    [
+                        'label'         => 'QR custom_key 2',
+                        'type'          => 'text',
+                        'name'          => 'qrcodeCustomKey2',
+                        'default_value' => $this->get_qrcode_custom_key_for_field(1),
+                        'class'         => 'pwe-qr-custom-key-field pwe-qr-custom-key-field-second',
+                        'readonly'      => true,
+                        'description'   => $this->get_qrcode_custom_key_description(1),
+                    ],
+                    [
+                        'type' => 'html',
+                        'name' => 'qrcodeValuePreview',
+                        'html' => $this->get_qrcode_value_preview_html(),
+                    ],
                 ],
             ],
         ];
     }
 
     /**
-     * Override save_feed_settings to ensure QR code structure is always saved correctly, even if user doesn't change settings.
-     * 
-     * @param int   $feed_id
-     * @param int   $form_id
-     * @param array $settings
+     * Save feed settings and keep the QR custom_key values synchronized.
+     *
+     * The two visible fields, qrcodeCustomKey1 and qrcodeCustomKey2, are stored as helper
+     * feed meta fields so the settings screen can render the correct values immediately
+     * after saving. The same values are also written into qrcodeFields, which is the
+     * structure used by the QR generation logic.
+     *
+     * @param int   $feed_id  Feed ID. Empty when a new feed is created.
+     * @param int   $form_id  Gravity Forms form ID.
+     * @param array $settings Submitted feed settings.
      *
      * @return int|WP_Error
      */
     public function save_feed_settings($feed_id, $form_id, $settings) {
-        $prefix_form_part = $this->build_prefix_form_part($form_id);
-        $random = '';
+        $first_custom_key  = $this->sanitize_custom_key_setting($settings['qrcodeCustomKey1'] ?? '');
+        $second_custom_key = $this->sanitize_custom_key_setting($settings['qrcodeCustomKey2'] ?? '');
 
-        // Try to reuse existing random value
+        // If a submitted helper field is empty, reuse the existing qrcodeFields value.
+        // This prevents accidental data loss when editing old feeds or partially saved feeds.
         if (!empty($feed_id)) {
-            $existing_feed = $this->get_feed($feed_id);
+            $existing_feed   = $this->get_feed($feed_id);
             $existing_fields = $existing_feed['meta']['qrcodeFields'] ?? [];
 
-            if (
-                isset($existing_fields[1]['custom_key']) &&
-                is_string($existing_fields[1]['custom_key'])
-            ) {
-                $random = $existing_fields[1]['custom_key'];
+            if ($first_custom_key === '') {
+                $first_custom_key = $this->get_custom_key_from_fields($existing_fields, 0);
+            }
+
+            if ($second_custom_key === '') {
+                $second_custom_key = $this->get_custom_key_from_fields($existing_fields, 1);
             }
         }
 
-        // Generate new random if missing
-        if (empty($random)) {
-            $random = 'rnd' . wp_rand(10000, 99999);
+        // Fallbacks for new feeds or feeds with incomplete QR metadata.
+        if ($first_custom_key === '') {
+            $first_custom_key = $this->build_prefix_form_part($form_id);
         }
 
-        // Store QR structure parts
+        if ($second_custom_key === '') {
+            $second_custom_key = 'rnd' . wp_rand(10000, 99999);
+        }
+
+        // Keep helper fields in feed meta. This makes Gravity Forms render the same values
+        // immediately after saving, instead of showing stale descriptions until refresh.
+        $settings['qrcodeCustomKey1'] = $first_custom_key;
+        $settings['qrcodeCustomKey2'] = $second_custom_key;
+
+        // Main QR structure used by the plugin.
         $settings['qrcodeFields'] = [
             [
                 'key'        => 'gf_custom',
-                'custom_key' => $prefix_form_part,
+                'custom_key' => $first_custom_key,
                 'value'      => 'id',
             ],
             [
                 'key'        => 'gf_custom',
-                'custom_key' => $random,
+                'custom_key' => $second_custom_key,
                 'value'      => 'id',
             ],
         ];
@@ -219,10 +287,42 @@ class PWE_GF_QR_Addon extends GFFeedAddOn {
     }
 
     /**
-     * Build the first part of the QR code custom key based on the form ID and domain.
-     * Format: PREFIX + zero-padded form ID (3 digits)
+     * Return the value shown in a custom_key field.
      *
-     * @param int $form_id
+     * Priority:
+     * 1. Submitted value from the current request, so descriptions are correct right after save.
+     * 2. Helper feed meta field, qrcodeCustomKey1 or qrcodeCustomKey2.
+     * 3. Main qrcodeFields structure, used by existing feeds and QR generation.
+     *
+     * @param int $index qrcodeFields index, 0 for the first key and 1 for the second key.
+     *
+     * @return string
+     */
+    private function get_qrcode_custom_key_for_field($index) {
+        $index      = absint($index);
+        $field_name = $index === 0 ? 'qrcodeCustomKey1' : 'qrcodeCustomKey2';
+
+        $posted_value = $this->get_posted_setting_value($field_name);
+
+        if ($posted_value !== '') {
+            return $posted_value;
+        }
+
+        $setting_value = $this->get_setting($field_name);
+
+        if (is_string($setting_value) && trim($setting_value) !== '') {
+            return $setting_value;
+        }
+
+        return $this->get_existing_qrcode_custom_key($index);
+    }
+
+    /**
+     * Build the first QR custom_key fallback from the current domain and form ID.
+     *
+     * Format: first 4 letters from the domain + zero-padded form ID, for example NEWW107.
+     *
+     * @param int $form_id Gravity Forms form ID.
      *
      * @return string
      */
@@ -236,8 +336,110 @@ class PWE_GF_QR_Addon extends GFFeedAddOn {
     }
 
     /**
-     * Duplicate QR feeds when Gravity Form is duplicated.
-     * Keeps the same QR feed name, but rebuilds prefix for the new form ID.
+     * Build the helper text shown below a custom_key field.
+     *
+     * The text uses the same source as the input value, so after saving the field and its
+     * description stay synchronized instead of showing stale database values.
+     *
+     * @param int $index qrcodeFields index.
+     *
+     * @return string
+     */
+    private function get_qrcode_custom_key_description($index) {
+        $custom_key = $this->get_qrcode_custom_key_for_field($index);
+
+        if ($custom_key === '') {
+            return 'custom_key: brak';
+        }
+
+        return 'custom_key: <code>' . esc_html($custom_key) . '</code>';
+    }
+
+    /**
+     * Get an existing custom_key from the current qrcodeFields feed setting.
+     *
+     * @param int $index qrcodeFields index.
+     *
+     * @return string
+     */
+    private function get_existing_qrcode_custom_key($index) {
+        $fields = $this->get_setting('qrcodeFields');
+
+        return $this->get_custom_key_from_fields($fields, $index);
+    }
+
+    /**
+     * Safely extract a custom_key value from a qrcodeFields array.
+     *
+     * @param mixed $fields qrcodeFields value.
+     * @param int   $index  qrcodeFields index.
+     *
+     * @return string
+     */
+    private function get_custom_key_from_fields($fields, $index) {
+        $index = absint($index);
+
+        if (
+            is_array($fields) &&
+            isset($fields[$index]['custom_key']) &&
+            is_string($fields[$index]['custom_key'])
+        ) {
+            return sanitize_text_field($fields[$index]['custom_key']);
+        }
+
+        return '';
+    }
+
+    /**
+     * Read a submitted Gravity Forms add-on setting from the current POST request.
+     *
+     * Gravity Forms usually posts settings as _gaddon_setting_{field_name}. The plain field
+     * name is checked as a fallback to keep the method tolerant of framework differences.
+     *
+     * @param string $field_name Feed setting name.
+     *
+     * @return string
+     */
+    private function get_posted_setting_value($field_name) {
+        $possible_post_keys = array(
+            '_gaddon_setting_' . $field_name,
+            $field_name,
+        );
+
+        foreach ($possible_post_keys as $posted_key) {
+            if (
+                isset($_POST[$posted_key]) &&
+                is_string($_POST[$posted_key])
+            ) {
+                return $this->sanitize_custom_key_setting(wp_unslash($_POST[$posted_key]));
+            }
+        }
+
+        return '';
+    }
+
+    /**
+     * Sanitize a custom_key value from settings, POST data, or existing feed meta.
+     *
+     * @param mixed $value Raw value.
+     *
+     * @return string
+     */
+    private function sanitize_custom_key_setting($value) {
+        if (!is_string($value)) {
+            return '';
+        }
+
+        $value = sanitize_text_field(wp_unslash($value));
+
+        return trim($value);
+    }
+
+    /**
+     * Duplicate QR feeds when a Gravity Form is duplicated.
+     *
+     * The feed name and second custom_key are kept, while the first custom_key is rebuilt
+     * for the new form ID. Helper UI fields are synchronized with the new qrcodeFields data.
      *
      * @param int $form_id Original form ID.
      * @param int $new_id  New duplicated form ID.
@@ -271,18 +473,21 @@ class PWE_GF_QR_Addon extends GFFeedAddOn {
                 continue;
             }
 
-            // Avoid duplicating the same QR feed twice on the new form.
             if ($this->new_form_already_has_qr_feed($new_id, $feed_name)) {
                 continue;
             }
 
-            /*
-            * Important:
-            * Keep the same feed name and random part,
-            * but rebuild the first QR prefix for the new form ID.
-            */
             if (!empty($meta['qrcodeFields']) && is_array($meta['qrcodeFields'])) {
                 $meta['qrcodeFields'][0]['custom_key'] = $this->build_prefix_form_part($new_id);
+            }
+
+            // Keep helper fields synchronized after duplication as well.
+            if (!empty($meta['qrcodeFields'][0]['custom_key']) && is_string($meta['qrcodeFields'][0]['custom_key'])) {
+                $meta['qrcodeCustomKey1'] = $meta['qrcodeFields'][0]['custom_key'];
+            }
+
+            if (!empty($meta['qrcodeFields'][1]['custom_key']) && is_string($meta['qrcodeFields'][1]['custom_key'])) {
+                $meta['qrcodeCustomKey2'] = $meta['qrcodeFields'][1]['custom_key'];
             }
 
             $is_active = !empty($feed['is_active']) ? 1 : 0;
@@ -292,10 +497,10 @@ class PWE_GF_QR_Addon extends GFFeedAddOn {
     }
 
     /**
-     * Check whether duplicated form already has QR feed with the same name.
+     * Check whether the duplicated form already contains a QR feed with the same name.
      *
-     * @param int    $form_id
-     * @param string $feed_name
+     * @param int    $form_id   Form ID to check.
+     * @param string $feed_name Feed name to find.
      *
      * @return bool
      */
@@ -317,5 +522,37 @@ class PWE_GF_QR_Addon extends GFFeedAddOn {
         }
 
         return false;
+    }
+
+    /**
+     * Build the full QR code value preview shown below custom_key fields.
+     *
+     * Example:
+     * COLD016{entry_id}RND99043{entry_id}
+     *
+     * @return string HTML preview for the feed settings screen.
+     */
+    private function get_qrcode_value_preview_html() {
+        $first_custom_key  = $this->get_qrcode_custom_key_for_field(0);
+        $second_custom_key = $this->get_qrcode_custom_key_for_field(1);
+
+        $qr_code_value = '';
+
+        if ($first_custom_key !== '') {
+            $qr_code_value .= $first_custom_key . '{entry_id}';
+        }
+
+        if ($second_custom_key !== '') {
+            $qr_code_value .= $second_custom_key . '{entry_id}';
+        }
+
+        if ($qr_code_value === '') {
+            $qr_code_value = 'brak';
+        }
+
+        return sprintf(
+            '<div class="pwe-qr-code-value-preview"><strong>QR CODE VALUE:</strong> <code>%s</code></div>',
+            esc_html($qr_code_value)
+        );
     }
 }

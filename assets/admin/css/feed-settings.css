@@ -1,0 +1,42 @@
+.gform-settings-field:has(.pwe-qr-custom-key-field-first),
+.gform-settings-field:has(.pwe-qr-custom-key-field-second) {
+    display: inline-block;
+    width: calc(50% - 12px);
+    vertical-align: top;
+    box-sizing: border-box;
+}
+
+.gform-settings-field:has(.pwe-qr-custom-key-field-first) {
+    margin-right: 20px;
+}
+
+.gform-settings-field:has(.pwe-qr-custom-key-field-first) input,
+.gform-settings-field:has(.pwe-qr-custom-key-field-second) input {
+    width: 100%;
+}
+
+.pwe-qr-code-value-preview {
+    margin-top: 12px;
+    padding: 10px 12px;
+    background: #f6f7f7;
+    border-left: 4px solid #2271b1;
+}
+
+.pwe-qr-code-value-preview code {
+    font-size: 13px;
+}
+
+.pwe-qr-custom-key-field {
+    pointer-events: none;
+    background-color: #f0f0f1 !important;
+    color: #646970 !important;
+}
+
+@media (max-width: 782px) {
+    .gform-settings-field:has(.pwe-qr-custom-key-field-first),
+    .gform-settings-field:has(.pwe-qr-custom-key-field-second) {
+        display: block;
+        width: 100%;
+        margin-right: 0;
+    }
+}
