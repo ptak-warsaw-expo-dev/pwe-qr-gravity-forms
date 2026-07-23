@@ -126,6 +126,16 @@ class PWE_QR_Entry_Meta {
             return;
         }
 
+        // Some Gravity Forms admin layouts fire the sidebar hook more than once.
+        // Render the QR panel only once for a given entry during the current request.
+        static $rendered_entry_ids = [];
+
+        if (isset($rendered_entry_ids[$entry_id])) {
+            return;
+        }
+
+        $rendered_entry_ids[$entry_id] = true;
+
         $qr_url = gform_get_meta($entry_id, 'pwe_qr_code_url');
 
         if (empty($qr_url)) {

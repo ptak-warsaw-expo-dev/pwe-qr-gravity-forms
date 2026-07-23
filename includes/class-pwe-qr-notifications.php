@@ -71,10 +71,6 @@ class PWE_QR_Notifications {
         // Reset attachments for current notification processing.
         $this->runtime_attachments = [];
 
-        if (empty($notification['message'])) {
-            return $notification;
-        }
-
         $form_id = absint($form['id'] ?? 0);
 
         if (!$form_id) {
@@ -83,6 +79,14 @@ class PWE_QR_Notifications {
 
         $attach_enabled = !empty($notification['pwe_attach_qr_image']);
         $seen = [];
+
+        if (empty($notification['message'])) {
+            if ($attach_enabled) {
+                $this->prepare_default_qr_attachments($form_id, $entry, $seen);
+            }
+
+            return $notification;
+        }
 
         /*
         * Supports:
@@ -126,6 +130,12 @@ class PWE_QR_Notifications {
                     $data['logo_url'] ?? ''
                 );
 
+                // Prepare the QR attachment whenever the notification checkbox is enabled,
+                // regardless of whether the shortcode renders an URL or an inline image.
+                if ($attach_enabled) {
+                    $this->prepare_qr_attachment($data, $name . '|' . $data['size'], $seen);
+                }
+
                 if ($shortcode_type === 'pwe_qr_url') {
                     return esc_url($image_url);
                 }
@@ -134,37 +144,95 @@ class PWE_QR_Notifications {
                     return rawurlencode($image_url);
                 }
 
-                // Prepare attachment only once per shortcode name/size.
-                // Attach only when image shortcode is used.
-                if ($attach_enabled) {
-                    $unique_key = $name . '|' . $data['size'];
-
-                    if (!isset($seen[$unique_key])) {
-                        $png = $this->qr->generate_png(
-                            $data['value'],
-                            $data['label'],
-                            $data['size'],
-                            $data['logo_url'] ?? ''
-                        );
-
-                        if (!empty($png)) {
-                            $this->runtime_attachments[] = [
-                                'content'  => $png,
-                                'filename' => sanitize_file_name('qrcode_' . $data['value']) . '.png',
-                                'type'     => 'image/png',
-                            ];
-                        }
-
-                        $seen[$unique_key] = true;
-                    }
-                }
-
                 return '<img src="' . esc_url($image_url) . '" alt="QR code ' . esc_attr($data['value']) . '">';
             },
             $notification['message']
         );
 
+        if ($attach_enabled && empty($this->runtime_attachments)) {
+            $this->prepare_default_qr_attachments($form_id, $entry, $seen);
+        }
+
         return $notification;
+    }
+
+    /**
+     * Prepare a single QR PNG attachment and avoid duplicates in the same notification.
+     *
+     * @param array  $data QR data returned by PWE_QR_Generator::get_qr_data_for_feed().
+     * @param string $unique_key Unique key for this feed/size combination.
+     * @param array  $seen Runtime duplicate guard.
+     *
+     * @return void
+     */
+    private function prepare_qr_attachment($data, $unique_key, &$seen) {
+        if (empty($data) || !is_array($data) || isset($seen[$unique_key])) {
+            return;
+        }
+
+        $png = $this->qr->generate_png(
+            $data['value'] ?? '',
+            $data['label'] ?? '',
+            $data['size'] ?? 200,
+            $data['logo_url'] ?? ''
+        );
+
+        if (!empty($png)) {
+            $this->runtime_attachments[] = [
+                'content'  => $png,
+                'filename' => sanitize_file_name('qrcode_' . ($data['value'] ?? uniqid('', true))) . '.png',
+                'type'     => 'image/png',
+            ];
+        }
+
+        $seen[$unique_key] = true;
+    }
+
+    /**
+     * Prepare QR attachments when the checkbox is enabled but the notification message
+     * does not contain a QR image shortcode.
+     *
+     * @param int   $form_id Gravity Forms form ID.
+     * @param array $entry Gravity Forms entry data.
+     * @param array $seen Runtime duplicate guard.
+     *
+     * @return void
+     */
+    private function prepare_default_qr_attachments($form_id, $entry, &$seen) {
+        if (!class_exists('GFAPI')) {
+            return;
+        }
+
+        $feeds = GFAPI::get_feeds(null, $form_id, 'pwe_qr');
+
+        if (empty($feeds) || !is_array($feeds)) {
+            return;
+        }
+
+        foreach ($feeds as $feed) {
+            if (empty($feed['is_active'])) {
+                continue;
+            }
+
+            $meta = $feed['meta'] ?? [];
+            $name = $meta['feedName'] ?? $meta['qr_name'] ?? '';
+
+            if ($name === '') {
+                continue;
+            }
+
+            $size = !empty($meta['qrcodeSize'])
+                ? absint($meta['qrcodeSize'])
+                : (!empty($meta['qr_size']) ? absint($meta['qr_size']) : 200);
+
+            $data = $this->qr->get_qr_data_for_feed($name, $form_id, $entry, $size);
+
+            if (!$data) {
+                continue;
+            }
+
+            $this->prepare_qr_attachment($data, $name . '|' . $data['size'], $seen);
+        }
     }
 
     /**

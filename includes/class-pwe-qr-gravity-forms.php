@@ -57,6 +57,8 @@ if (!class_exists('PWE_QR_Gravity_Forms')) {
             // Create image controller.
             $this->image_controller = new PWE_QR_Image_Controller($this->qr);
 
+            $entry_meta = new PWE_QR_Entry_Meta($this->qr, $this->image_controller);
+
             // Notification shortcodes and attachments.
             new PWE_QR_Notifications($this->qr, $this->image_controller);
 
@@ -65,6 +67,9 @@ if (!class_exists('PWE_QR_Gravity_Forms')) {
 
             // Save QR image URL into Gravity Forms entry meta.
             new PWE_QR_Entry_Meta($this->qr, $this->image_controller);
+
+            // Temporary tool for filling missing QR metadata in historical entries.
+            new PWE_QR_Backfill_Tool($entry_meta);
 
             // Register the Gravity Forms Add-On after GF is loaded.
             add_action('gform_loaded', [$this, 'register_gf_addon'], 5);

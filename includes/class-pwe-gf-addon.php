@@ -99,8 +99,9 @@ class PWE_GF_QR_Addon extends GFFeedAddOn {
     /**
      * Define feed settings fields for the QR feed.
      *
-     * qrcodeCustomKey1 and qrcodeCustomKey2 are UI helper fields. They are synchronized
-     * with qrcodeFields[0].custom_key and qrcodeFields[1].custom_key during save.
+     * The visible custom_key fields are used only on the settings screen.
+     * During save, their values are written into qrcodeFields and then removed from feed meta,
+     * so the stored JSON keeps the original clean structure.
      *
      * @return array
      */
@@ -201,7 +202,6 @@ class PWE_GF_QR_Addon extends GFFeedAddOn {
                         'default_value' => $this->get_qrcode_custom_key_for_field(0),
                         'class'         => 'pwe-qr-custom-key-field pwe-qr-custom-key-field-first',
                         'readonly'      => true,
-                        'description'   => $this->get_qrcode_custom_key_description(0),
                     ],
                     [
                         'label'         => 'QR custom_key 2',
@@ -210,7 +210,6 @@ class PWE_GF_QR_Addon extends GFFeedAddOn {
                         'default_value' => $this->get_qrcode_custom_key_for_field(1),
                         'class'         => 'pwe-qr-custom-key-field pwe-qr-custom-key-field-second',
                         'readonly'      => true,
-                        'description'   => $this->get_qrcode_custom_key_description(1),
                     ],
                     [
                         'type' => 'html',
@@ -223,12 +222,11 @@ class PWE_GF_QR_Addon extends GFFeedAddOn {
     }
 
     /**
-     * Save feed settings and keep the QR custom_key values synchronized.
+     * Save feed settings and keep only the main QR structure in feed meta.
      *
-     * The two visible fields, qrcodeCustomKey1 and qrcodeCustomKey2, are stored as helper
-     * feed meta fields so the settings screen can render the correct values immediately
-     * after saving. The same values are also written into qrcodeFields, which is the
-     * structure used by the QR generation logic.
+     * qrcodeCustomKey1 and qrcodeCustomKey2 are temporary UI fields. They are accepted
+     * from the settings form, copied into qrcodeFields, and removed before saving so the
+     * database JSON does not contain duplicate helper keys.
      *
      * @param int   $feed_id  Feed ID. Empty when a new feed is created.
      * @param int   $form_id  Gravity Forms form ID.
@@ -264,10 +262,8 @@ class PWE_GF_QR_Addon extends GFFeedAddOn {
             $second_custom_key = 'rnd' . wp_rand(10000, 99999);
         }
 
-        // Keep helper fields in feed meta. This makes Gravity Forms render the same values
-        // immediately after saving, instead of showing stale descriptions until refresh.
-        $settings['qrcodeCustomKey1'] = $first_custom_key;
-        $settings['qrcodeCustomKey2'] = $second_custom_key;
+        // These are only UI fields. Do not store them as separate feed meta.
+        unset($settings['qrcodeCustomKey1'], $settings['qrcodeCustomKey2']);
 
         // Main QR structure used by the plugin.
         $settings['qrcodeFields'] = [
@@ -290,9 +286,11 @@ class PWE_GF_QR_Addon extends GFFeedAddOn {
      * Return the value shown in a custom_key field.
      *
      * Priority:
-     * 1. Submitted value from the current request, so descriptions are correct right after save.
-     * 2. Helper feed meta field, qrcodeCustomKey1 or qrcodeCustomKey2.
-     * 3. Main qrcodeFields structure, used by existing feeds and QR generation.
+     * 1. Submitted value from the current request, so the field and QR preview stay current
+     *    immediately after saving.
+     * 2. Existing qrcodeFields structure from feed meta.
+     *
+     * qrcodeCustomKey1 and qrcodeCustomKey2 are not stored in the database as separate keys.
      *
      * @param int $index qrcodeFields index, 0 for the first key and 1 for the second key.
      *
@@ -306,12 +304,6 @@ class PWE_GF_QR_Addon extends GFFeedAddOn {
 
         if ($posted_value !== '') {
             return $posted_value;
-        }
-
-        $setting_value = $this->get_setting($field_name);
-
-        if (is_string($setting_value) && trim($setting_value) !== '') {
-            return $setting_value;
         }
 
         return $this->get_existing_qrcode_custom_key($index);
@@ -333,26 +325,6 @@ class PWE_GF_QR_Addon extends GFFeedAddOn {
         $form_part = str_pad(absint($form_id), 3, '0', STR_PAD_LEFT);
 
         return $prefix . $form_part;
-    }
-
-    /**
-     * Build the helper text shown below a custom_key field.
-     *
-     * The text uses the same source as the input value, so after saving the field and its
-     * description stay synchronized instead of showing stale database values.
-     *
-     * @param int $index qrcodeFields index.
-     *
-     * @return string
-     */
-    private function get_qrcode_custom_key_description($index) {
-        $custom_key = $this->get_qrcode_custom_key_for_field($index);
-
-        if ($custom_key === '') {
-            return 'custom_key: brak';
-        }
-
-        return 'custom_key: <code>' . esc_html($custom_key) . '</code>';
     }
 
     /**
@@ -439,7 +411,8 @@ class PWE_GF_QR_Addon extends GFFeedAddOn {
      * Duplicate QR feeds when a Gravity Form is duplicated.
      *
      * The feed name and second custom_key are kept, while the first custom_key is rebuilt
-     * for the new form ID. Helper UI fields are synchronized with the new qrcodeFields data.
+     * for the new form ID. Helper UI fields are removed so duplicated feeds keep the clean
+     * qrcodeFields-only structure.
      *
      * @param int $form_id Original form ID.
      * @param int $new_id  New duplicated form ID.
@@ -481,14 +454,7 @@ class PWE_GF_QR_Addon extends GFFeedAddOn {
                 $meta['qrcodeFields'][0]['custom_key'] = $this->build_prefix_form_part($new_id);
             }
 
-            // Keep helper fields synchronized after duplication as well.
-            if (!empty($meta['qrcodeFields'][0]['custom_key']) && is_string($meta['qrcodeFields'][0]['custom_key'])) {
-                $meta['qrcodeCustomKey1'] = $meta['qrcodeFields'][0]['custom_key'];
-            }
-
-            if (!empty($meta['qrcodeFields'][1]['custom_key']) && is_string($meta['qrcodeFields'][1]['custom_key'])) {
-                $meta['qrcodeCustomKey2'] = $meta['qrcodeFields'][1]['custom_key'];
-            }
+            unset($meta['qrcodeCustomKey1'], $meta['qrcodeCustomKey2']);
 
             $is_active = !empty($feed['is_active']) ? 1 : 0;
 
