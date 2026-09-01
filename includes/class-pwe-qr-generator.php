@@ -18,26 +18,30 @@ class PWE_QR_Generator {
      *
      * @return string The generated QR code value.
      */
-    public function generate_label($form_id, $entry_id = 0, $random = '') {
-        // Get domain and clean it
-        $domain = $_SERVER['HTTP_HOST'] ?? do_shortcode('[trade_fair_domainadress]');
-        $clean = preg_replace('/[^a-z]/i', '', $domain);
-
-        // Build prefix from domain
-        $prefix = strtoupper(substr($clean, 0, 4));
-
-        // Format form ID (3 digits)
-        $form_part = str_pad(absint($form_id), 3, '0', STR_PAD_LEFT);
-
+    public function generate_label($form_id, $entry_id = 0, $random = '', $feed_prefix = '') {
         $entry_id = absint($entry_id);
+        $feed_prefix = is_string($feed_prefix) ? trim($feed_prefix) : '';
 
-        // Generate random part if not provided
+        // The first custom_key from the feed is the authoritative QR prefix.
+        // It already contains the form-specific part, e.g. COAT263.
+        if ($feed_prefix !== '') {
+            $prefix_form_part = $feed_prefix;
+        } else {
+            // Backward-compatible fallback for old/incomplete feeds: domain + form ID.
+            $domain = $_SERVER['HTTP_HOST'] ?? do_shortcode('[trade_fair_domainadress]');
+            $clean = preg_replace('/[^a-z]/i', '', $domain);
+            $prefix = strtoupper(substr($clean, 0, 4));
+            $form_part = str_pad(absint($form_id), 3, '0', STR_PAD_LEFT);
+            $prefix_form_part = $prefix . $form_part;
+        }
+
+        // Generate random part if not provided.
         if (empty($random)) {
             $random = 'rnd' . wp_rand(10000, 99999);
         }
 
-        // Final QR value
-        return $prefix . $form_part . $entry_id . $random . $entry_id;
+        // Final QR value.
+        return $prefix_form_part . $entry_id . $random . $entry_id;
     }
 
     /**
@@ -323,18 +327,27 @@ class PWE_QR_Generator {
 
             // Build QR value once per request
             if (!isset($this->runtime_cache[$cache_key])) {
+                $feed_prefix = '';
                 $random = '';
 
-                // Try to reuse stored random part
+                // The first custom_key is the authoritative prefix configured in the feed.
+                if (
+                    !empty($meta['qrcodeFields'][0]['custom_key']) &&
+                    is_string($meta['qrcodeFields'][0]['custom_key'])
+                ) {
+                    $feed_prefix = trim($meta['qrcodeFields'][0]['custom_key']);
+                }
+
+                // The second custom_key is the stored random/unique part.
                 if (
                     !empty($meta['qrcodeFields'][1]['custom_key']) &&
                     is_string($meta['qrcodeFields'][1]['custom_key'])
                 ) {
-                    $random = $meta['qrcodeFields'][1]['custom_key'];
+                    $random = trim($meta['qrcodeFields'][1]['custom_key']);
                 }
 
                 $this->runtime_cache[$cache_key] =
-                    $this->generate_label($form_id, $entry_id, $random);
+                    $this->generate_label($form_id, $entry_id, $random, $feed_prefix);
             }
 
             // Label (fallback to old key)
