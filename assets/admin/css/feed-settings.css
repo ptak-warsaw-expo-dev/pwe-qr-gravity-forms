@@ -27,9 +27,9 @@
 }
 
 .pwe-qr-custom-key-field {
-    /* pointer-events: none; */
-    /* background-color: #f0f0f1 !important; */
-    /* color: #646970 !important; */
+    pointer-events: none;
+    background-color: #f0f0f1 !important;
+    color: #646970 !important;
 }
 
 @media (max-width: 782px) {

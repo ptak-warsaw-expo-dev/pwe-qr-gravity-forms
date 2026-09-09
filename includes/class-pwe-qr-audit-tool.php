@@ -126,8 +126,88 @@ class PWE_QR_Audit_Tool {
             .pwe-qr-audit .pwe-qr-filters input {
                 min-height: 32px;
             }
-            .pwe-qr-audit .tablenav-pages {
+            .pwe-qr-audit .pwe-qr-summary {
+                display: flex;
+                flex-wrap: wrap;
+                gap: 8px 24px;
+                align-items: center;
                 margin: 12px 0;
+            }
+            .pwe-qr-audit .pwe-qr-summary-item {
+                display: inline-flex;
+                align-items: center;
+                gap: 4px;
+                white-space: nowrap;
+            }
+            .pwe-qr-audit .pwe-qr-summary-item.ok {
+                color: #116329;
+            }
+            .pwe-qr-audit .pwe-qr-summary-item.bad {
+                color: #8a2424;
+            }
+            .pwe-qr-audit .pwe-qr-summary-item.none {
+                color: #50575e;
+            }
+            .pwe-qr-audit .tablenav {
+                height: auto;
+                margin: 16px 0 4px;
+                padding: 0;
+            }
+            .pwe-qr-audit .tablenav-pages {
+                float: none;
+                display: flex;
+                justify-content: flex-end;
+                align-items: center;
+                margin: 0;
+            }
+            .pwe-qr-audit .tablenav-pages .pagination-links {
+                display: flex;
+                flex-wrap: wrap;
+                gap: 5px;
+                align-items: center;
+            }
+            .pwe-qr-audit .tablenav-pages .page-numbers {
+                display: inline-flex;
+                align-items: center;
+                justify-content: center;
+                min-width: 34px;
+                height: 34px;
+                box-sizing: border-box;
+                padding: 0 10px;
+                border: 1px solid #c3c4c7;
+                border-radius: 4px;
+                background: #fff;
+                color: #2271b1;
+                text-decoration: none;
+                font-size: 14px;
+                line-height: 1;
+            }
+            .pwe-qr-audit .tablenav-pages a.page-numbers:hover,
+            .pwe-qr-audit .tablenav-pages a.page-numbers:focus {
+                border-color: #2271b1;
+                background: #f0f6fc;
+                color: #135e96;
+                box-shadow: none;
+            }
+            .pwe-qr-audit .tablenav-pages .page-numbers.current {
+                border-color: #2271b1;
+                background: #2271b1;
+                color: #fff;
+                font-weight: 600;
+            }
+            .pwe-qr-audit .tablenav-pages .page-numbers.dots {
+                border-color: transparent;
+                background: transparent;
+                color: #646970;
+            }
+            @media (max-width: 782px) {
+                .pwe-qr-audit .tablenav-pages {
+                    justify-content: flex-start;
+                }
+                .pwe-qr-audit .tablenav-pages .page-numbers {
+                    min-width: 40px;
+                    height: 40px;
+                }
             }
         </style>';
     }
@@ -201,9 +281,20 @@ class PWE_QR_Audit_Tool {
 
         foreach ($forms as $form) {
             $form_id = absint($form['id'] ?? 0);
-            if ($form_id) {
-                $active_forms[$form_id] = $form;
+
+            if (!$form_id) {
+                continue;
             }
+
+            // W sekcji rejestracji pokazujemy wyłącznie wpisy z formularzy,
+            // które mają co najmniej jeden feed PWE QR.
+            $feeds = $this->get_pwe_feeds($form_id);
+
+            if (empty($feeds)) {
+                continue;
+            }
+
+            $active_forms[$form_id] = $form;
         }
 
         $selected_form_id = isset($_GET['audit_form_id']) ? absint($_GET['audit_form_id']) : 0;
@@ -212,17 +303,28 @@ class PWE_QR_Audit_Tool {
         }
 
         $search = isset($_GET['audit_search']) ? sanitize_text_field(wp_unslash($_GET['audit_search'])) : '';
+        $status_filter = isset($_GET['audit_status']) ? sanitize_key(wp_unslash($_GET['audit_status'])) : '';
+
+        if (!in_array($status_filter, ['', 'ok', 'bad', 'none'], true)) {
+            $status_filter = '';
+        }
+
         $page = max(1, isset($_GET['audit_paged']) ? absint($_GET['audit_paged']) : 1);
 
-        $data = $this->get_entries_page(array_keys($active_forms), $selected_form_id, $search, $page);
+        $data = $this->get_entries_page(array_keys($active_forms), $selected_form_id, $search, $status_filter, $page);
 
         echo '<div class="pwe-qr-section">';
         echo '<h2>Rejestracje i zapisane kody QR</h2>';
-        echo '<p>Pokazywane są aktywne wpisy z aktywnych formularzy. Tabela jest stronicowana po ' . absint($this->per_page) . ' wpisów.</p>';
+        echo '<p>Pokazywane są aktywne wpisy tylko z formularzy, które mają feed PWE QR. Tabela jest stronicowana po ' . absint($this->per_page) . ' wpisów.</p>';
 
-        $this->render_filters($active_forms, $selected_form_id, $search);
+        $this->render_filters($active_forms, $selected_form_id, $search, $status_filter);
 
-        echo '<p><strong>Znaleziono wpisów: ' . number_format_i18n($data['total']) . '</strong></p>';
+        echo '<div class="pwe-qr-summary">';
+        echo '<span class="pwe-qr-summary-item">Znaleziono wpisów: ' . number_format_i18n($data['all_total']) . '</span>';
+        echo '<span class="pwe-qr-summary-item ok">Zgodne: ' . number_format_i18n($data['counts']['ok']) . '</span>';
+        echo '<span class="pwe-qr-summary-item bad">Rozbieżne: ' . number_format_i18n($data['counts']['bad']) . '</span>';
+        echo '<span class="pwe-qr-summary-item none">Brak danych: ' . number_format_i18n($data['counts']['none']) . '</span>';
+        echo '</div>';
 
         echo '<div class="pwe-qr-table-wrap">';
         echo '<table class="widefat striped">';
@@ -265,7 +367,7 @@ class PWE_QR_Audit_Tool {
                 $email = $this->get_entry_email($entry, $email_fields_cache[$form_id]);
                 $qr_url = (string) gform_get_meta($entry_id, 'pwe_qr_code_url');
                 $qr_value = $this->extract_qr_value($qr_url);
-                $comparison = $this->compare_entry_qr($form_id, $entry, $feeds_cache[$form_id], $qr_value);
+                $comparison = isset($entry_row['comparison']) ? $entry_row['comparison'] : $this->compare_entry_qr($form_id, $entry, $feeds_cache[$form_id], $qr_value);
 
                 echo '<tr>';
                 echo '<td><strong>' . esc_html($forms_cache[$form_id]['title'] ?? ('Formularz ' . $form_id)) . '</strong><br>ID ' . esc_html($form_id) . '</td>';
@@ -281,17 +383,17 @@ class PWE_QR_Audit_Tool {
 
         echo '</tbody></table></div>';
 
-        $this->render_pagination($data['total'], $page, $selected_form_id, $search);
+        $this->render_pagination($data['total'], $page, $selected_form_id, $search, $status_filter);
 
         echo '</div>';
     }
 
-    private function render_filters($active_forms, $selected_form_id, $search) {
+    private function render_filters($active_forms, $selected_form_id, $search, $status_filter) {
         echo '<form method="get" class="pwe-qr-filters">';
         echo '<input type="hidden" name="page" value="pwe-qr-audit">';
 
         echo '<select name="audit_form_id">';
-        echo '<option value="0">Wszystkie aktywne formularze</option>';
+        echo '<option value="0">Wszystkie formularze z feedem PWE QR</option>';
 
         foreach ($active_forms as $form_id => $form) {
             echo '<option value="' . absint($form_id) . '" ' . selected($selected_form_id, $form_id, false) . '>' .
@@ -300,21 +402,34 @@ class PWE_QR_Audit_Tool {
         }
 
         echo '</select>';
+
+        echo '<select name="audit_status">';
+        echo '<option value="" ' . selected($status_filter, '', false) . '>Wszystkie statusy</option>';
+        echo '<option value="ok" ' . selected($status_filter, 'ok', false) . '>Zgodne</option>';
+        echo '<option value="bad" ' . selected($status_filter, 'bad', false) . '>Rozbieżne</option>';
+        echo '<option value="none" ' . selected($status_filter, 'none', false) . '>Brak danych</option>';
+        echo '</select>';
+
         echo '<input type="search" name="audit_search" value="' . esc_attr($search) . '" placeholder="Entry ID lub e-mail">';
         echo '<button type="submit" class="button button-secondary">Filtruj</button>';
 
-        if ($selected_form_id || $search !== '') {
+        if ($selected_form_id || $search !== '' || $status_filter !== '') {
             echo '<a class="button" href="' . esc_url(admin_url('admin.php?page=pwe-qr-audit')) . '">Wyczyść</a>';
         }
 
         echo '</form>';
     }
 
-    private function get_entries_page($active_form_ids, $selected_form_id, $search, $page) {
+    private function get_entries_page($active_form_ids, $selected_form_id, $search, $status_filter, $page) {
         global $wpdb;
 
         if (empty($active_form_ids)) {
-            return ['entries' => [], 'total' => 0];
+            return [
+                'entries'   => [],
+                'total'     => 0,
+                'all_total' => 0,
+                'counts'    => ['ok' => 0, 'bad' => 0, 'none' => 0],
+            ];
         }
 
         [$entry_table, $meta_table] = $this->get_table_names();
@@ -353,31 +468,91 @@ class PWE_QR_Audit_Tool {
 
         $where_sql = implode(' AND ', $where);
 
-        $count_sql = "SELECT COUNT(*) FROM {$entry_table} e WHERE {$where_sql}";
-        $count_query = !empty($params) ? $wpdb->prepare($count_sql, $params) : $count_sql;
-        $total = absint($wpdb->get_var($count_query));
-
-        $offset = ($page - 1) * $this->per_page;
-        $list_params = $params;
-        $list_params[] = $this->per_page;
-        $list_params[] = $offset;
-
-        $list_sql = "SELECT e.id, e.form_id, e.date_created
+        $list_sql = "SELECT e.id, e.form_id, e.date_created,
+                            qm.meta_value AS pwe_qr_code_url
                      FROM {$entry_table} e
+                     LEFT JOIN {$meta_table} qm
+                       ON qm.entry_id = e.id
+                      AND qm.meta_key = 'pwe_qr_code_url'
                      WHERE {$where_sql}
-                     ORDER BY e.id DESC
-                     LIMIT %d OFFSET %d";
+                     ORDER BY e.id DESC";
 
-        $list_query = $wpdb->prepare($list_sql, $list_params);
-        $entries = (array) $wpdb->get_results($list_query, ARRAY_A);
+        $list_query = !empty($params) ? $wpdb->prepare($list_sql, $params) : $list_sql;
+        $rows = (array) $wpdb->get_results($list_query, ARRAY_A);
+
+        $feeds_cache = [];
+        $counts = ['ok' => 0, 'bad' => 0, 'none' => 0];
+        $filtered_rows = [];
+
+        foreach ($rows as $row) {
+            $entry_id = absint($row['id'] ?? 0);
+            $form_id = absint($row['form_id'] ?? 0);
+
+            if (!$entry_id || !$form_id) {
+                continue;
+            }
+
+            if (!isset($feeds_cache[$form_id])) {
+                $feeds_cache[$form_id] = $this->get_pwe_feeds($form_id);
+            }
+
+            $saved_value = $this->extract_qr_value((string) ($row['pwe_qr_code_url'] ?? ''));
+            $comparison = $this->compare_entry_qr_light($form_id, $entry_id, $feeds_cache[$form_id], $saved_value);
+
+            $counts[$comparison]++;
+            $row['comparison'] = $comparison;
+
+            if ($status_filter !== '' && $comparison !== $status_filter) {
+                continue;
+            }
+
+            $filtered_rows[] = $row;
+        }
+
+        $all_total = count($rows);
+        $total = count($filtered_rows);
+        $offset = ($page - 1) * $this->per_page;
+        $entries = array_slice($filtered_rows, $offset, $this->per_page);
 
         return [
-            'entries' => $entries,
-            'total'   => $total,
+            'entries'   => $entries,
+            'total'     => $total,
+            'all_total' => $all_total,
+            'counts'    => $counts,
         ];
     }
 
-    private function render_pagination($total, $page, $selected_form_id, $search) {
+    private function compare_entry_qr_light($form_id, $entry_id, $feeds, $saved_value) {
+        if ($saved_value === '') {
+            return 'none';
+        }
+
+        $active_feeds = array_values(array_filter($feeds, static function($feed) {
+            return !empty($feed['is_active']);
+        }));
+
+        if (empty($active_feeds)) {
+            return 'none';
+        }
+
+        foreach ($active_feeds as $feed) {
+            [$key1, $key2] = $this->get_feed_custom_keys($feed);
+
+            if ($key1 === '') {
+                continue;
+            }
+
+            $expected_value = $this->qr->generate_label($form_id, $entry_id, $key2, $key1);
+
+            if ($expected_value !== '' && hash_equals((string) $expected_value, (string) $saved_value)) {
+                return 'ok';
+            }
+        }
+
+        return 'bad';
+    }
+
+    private function render_pagination($total, $page, $selected_form_id, $search, $status_filter) {
         $total_pages = max(1, (int) ceil($total / $this->per_page));
 
         if ($total_pages <= 1) {
@@ -389,6 +564,7 @@ class PWE_QR_Audit_Tool {
                 'page'          => 'pwe-qr-audit',
                 'audit_form_id' => $selected_form_id ?: false,
                 'audit_search'  => $search !== '' ? $search : false,
+                'audit_status'  => $status_filter !== '' ? $status_filter : false,
                 'audit_paged'   => '%#%',
             ],
             admin_url('admin.php')
@@ -408,9 +584,9 @@ class PWE_QR_Audit_Tool {
             return;
         }
 
-        echo '<div class="tablenav"><div class="tablenav-pages">';
-        echo implode(' ', array_map('wp_kses_post', $links));
-        echo '</div></div>';
+        echo '<div class="tablenav"><div class="tablenav-pages"><span class="pagination-links">';
+        echo implode('', array_map('wp_kses_post', $links));
+        echo '</span></div></div>';
     }
 
     private function get_pwe_feeds($form_id) {

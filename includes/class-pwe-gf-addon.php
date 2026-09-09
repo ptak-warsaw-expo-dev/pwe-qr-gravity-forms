@@ -18,6 +18,14 @@ class PWE_GF_QR_Addon extends GFFeedAddOn {
 
     private static $_instance = null;
 
+    /**
+     * Cached fallback for QR custom_key 2 during the current request.
+     * This keeps the value identical in the settings field, preview and save operation.
+     *
+     * @var string|null
+     */
+    private $generated_second_custom_key = null;
+
     public static function get_instance() {
         return self::$_instance ?? (self::$_instance = new self());
     }
@@ -201,7 +209,7 @@ class PWE_GF_QR_Addon extends GFFeedAddOn {
                         'name'          => 'qrcodeCustomKey1',
                         'default_value' => $this->get_qrcode_custom_key_for_field(0),
                         'class'         => 'pwe-qr-custom-key-field pwe-qr-custom-key-field-first',
-                        // 'readonly'      => true,
+                        'readonly'      => true,
                     ],
                     [
                         'label'         => 'QR custom_key 2',
@@ -209,7 +217,7 @@ class PWE_GF_QR_Addon extends GFFeedAddOn {
                         'name'          => 'qrcodeCustomKey2',
                         'default_value' => $this->get_qrcode_custom_key_for_field(1),
                         'class'         => 'pwe-qr-custom-key-field pwe-qr-custom-key-field-second',
-                        // 'readonly'      => true,
+                        'readonly'      => true,
                     ],
                     [
                         'type' => 'html',
@@ -259,7 +267,7 @@ class PWE_GF_QR_Addon extends GFFeedAddOn {
         }
 
         if ($second_custom_key === '') {
-            $second_custom_key = 'rnd' . wp_rand(10000, 99999);
+            $second_custom_key = $this->build_second_custom_key();
         }
 
         // These are only UI fields. Do not store them as separate feed meta.
@@ -306,25 +314,91 @@ class PWE_GF_QR_Addon extends GFFeedAddOn {
             return $posted_value;
         }
 
-        return $this->get_existing_qrcode_custom_key($index);
+        $existing_value = $this->get_existing_qrcode_custom_key($index);
+
+        if ($existing_value !== '') {
+            return $existing_value;
+        }
+
+        // For a new feed prefill QR custom_key 1 from [trade_fair_feed_prefix]
+        // and append the zero-padded Gravity Forms form ID.
+        if ($index === 0) {
+            $form_id = $this->get_current_form_id();
+
+            if ($form_id) {
+                return $this->build_prefix_form_part($form_id);
+            }
+        }
+
+        // QR custom_key 2 must never be empty. For a new or incomplete feed
+        // generate the same rnd##### value that is stored during save.
+        if ($index === 1) {
+            return $this->build_second_custom_key();
+        }
+
+        return '';
     }
 
     /**
-     * Build the first QR custom_key fallback from the current domain and form ID.
+     * Build and cache QR custom_key 2.
      *
-     * Format: first 4 letters from the domain + zero-padded form ID, for example NEWW107.
+     * The historical QR format uses rnd + five digits, for example rnd31087.
+     * The generated value is cached for the lifetime of the current request so the
+     * settings input and QR preview cannot show two different random values.
+     *
+     * @return string
+     */
+    private function build_second_custom_key() {
+        if ($this->generated_second_custom_key === null) {
+            $this->generated_second_custom_key = 'rnd' . wp_rand(10000, 99999);
+        }
+
+        return $this->generated_second_custom_key;
+    }
+
+    /**
+     * Build the first QR custom_key from [trade_fair_feed_prefix] and form ID.
+     *
+     * Example: shortcode returns MRGL and form ID is 271 -> MRGL271.
+     * The shortcode itself has its own fallback, so the plugin does not derive
+     * the prefix from the domain anymore.
      *
      * @param int $form_id Gravity Forms form ID.
      *
      * @return string
      */
     private function build_prefix_form_part($form_id) {
-        $domain = $_SERVER['HTTP_HOST'] ?? do_shortcode('[trade_fair_domainadress]');
-        $clean = preg_replace('/[^a-z]/i', '', $domain);
-        $prefix = strtoupper(substr($clean, 0, 4));
+        $prefix = do_shortcode('[trade_fair_feed_prefix]');
+        $prefix = is_string($prefix) ? wp_strip_all_tags($prefix) : '';
+        $prefix = preg_replace('/[^a-z0-9]/i', '', $prefix);
+        $prefix = strtoupper(trim($prefix));
+
         $form_part = str_pad(absint($form_id), 3, '0', STR_PAD_LEFT);
 
         return $prefix . $form_part;
+    }
+
+    /**
+     * Get the current Gravity Forms form ID while creating/editing a feed.
+     *
+     * @return int
+     */
+    private function get_current_form_id() {
+        $form_id = absint(rgget('id'));
+
+        if ($form_id) {
+            return $form_id;
+        }
+
+        if (method_exists($this, 'get_current_form')) {
+            $form = $this->get_current_form();
+
+            if (is_array($form) && !empty($form['id'])) {
+                return absint($form['id']);
+            }
+        }
+
+        return 0;
     }
 
     /**
@@ -452,6 +526,14 @@ class PWE_GF_QR_Addon extends GFFeedAddOn {
 
             if (!empty($meta['qrcodeFields']) && is_array($meta['qrcodeFields'])) {
                 $meta['qrcodeFields'][0]['custom_key'] = $this->build_prefix_form_part($new_id);
+
+                if (empty($meta['qrcodeFields'][1]['custom_key'])) {
+                    $meta['qrcodeFields'][1] = [
+                        'key'        => 'gf_custom',
+                        'custom_key' => $this->build_second_custom_key(),
+                        'value'      => 'id',
+                    ];
+                }
             }
 
             unset($meta['qrcodeCustomKey1'], $meta['qrcodeCustomKey2']);
