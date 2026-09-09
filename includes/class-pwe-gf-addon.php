@@ -209,7 +209,7 @@ class PWE_GF_QR_Addon extends GFFeedAddOn {
                         'name'          => 'qrcodeCustomKey1',
                         'default_value' => $this->get_qrcode_custom_key_for_field(0),
                         'class'         => 'pwe-qr-custom-key-field pwe-qr-custom-key-field-first',
-                        'readonly'      => true,
+                        // 'readonly'      => true,
                     ],
                     [
                         'label'         => 'QR custom_key 2',
@@ -217,7 +217,7 @@ class PWE_GF_QR_Addon extends GFFeedAddOn {
                         'name'          => 'qrcodeCustomKey2',
                         'default_value' => $this->get_qrcode_custom_key_for_field(1),
                         'class'         => 'pwe-qr-custom-key-field pwe-qr-custom-key-field-second',
-                        'readonly'      => true,
+                        // 'readonly'      => true,
                     ],
                     [
                         'type' => 'html',
