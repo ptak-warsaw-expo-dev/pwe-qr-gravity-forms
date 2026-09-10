@@ -80,34 +80,66 @@ class PWE_QR_Entry_Meta {
                 continue;
             }
 
-            $qr_url = $this->image_controller->build_qr_image_url(
-                $data['value'],
-                $data['label'] ?? '',
-                $data['size'] ?? 200,
-                $data['logo_url'] ?? ''
-            );
-
-            $qr_url_encoded = rawurlencode($qr_url);
-
-            // Save the QR code URL into entry meta
-            gform_update_meta(
-                $entry_id,
-                'pwe_qr_code_url',
-                esc_url_raw($qr_url),
-                $form_id
-            );
-
-            // Save the encoded QR code URL into entry meta
-            gform_update_meta(
-                $entry_id,
-                'pwe_qr_code_url_encoded',
-                $qr_url_encoded,
-                $form_id
-            );
+            $this->save_qr_data_to_entry_meta($entry_id, $form_id, $data);
 
             // Save only the first active QR feed into pwe_qr_code_url.
             break;
         }
+    }
+
+
+    /**
+     * Save already generated QR data into Gravity Forms entry meta.
+     *
+     * This helper is also used by notification attachments so the QR URL is
+     * stored even when the notification does not contain a QR shortcode.
+     *
+     * @param int   $entry_id Gravity Forms entry ID.
+     * @param int   $form_id  Gravity Forms form ID.
+     * @param array $data     QR data returned by PWE_QR_Generator.
+     *
+     * @return string Saved QR image URL or empty string on failure.
+     */
+    public function save_qr_data_to_entry_meta($entry_id, $form_id, $data) {
+        if (!function_exists('gform_update_meta') || !is_array($data) || empty($data['value'])) {
+            return '';
+        }
+
+        $entry_id = absint($entry_id);
+        $form_id  = absint($form_id);
+
+        if (!$entry_id || !$form_id) {
+            return '';
+        }
+
+        $qr_url = $this->image_controller->build_qr_image_url(
+            $data['value'],
+            $data['label'] ?? '',
+            $data['size'] ?? 200,
+            $data['logo_url'] ?? ''
+        );
+
+        if (empty($qr_url)) {
+            return '';
+        }
+
+        $qr_url = esc_url_raw($qr_url);
+
+        gform_update_meta(
+            $entry_id,
+            'pwe_qr_code_url',
+            $qr_url,
+            $form_id
+        );
+
+        gform_update_meta(
+            $entry_id,
+            'pwe_qr_code_url_encoded',
+            rawurlencode($qr_url),
+            $form_id
+        );
+
+        return $qr_url;
     }
 
     /**

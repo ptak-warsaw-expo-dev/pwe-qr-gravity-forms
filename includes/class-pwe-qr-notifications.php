@@ -28,11 +28,19 @@ class PWE_QR_Notifications {
     private $image_controller;
 
     /**
+     * Entry meta persistence helper.
+     *
+     * @var PWE_QR_Entry_Meta|null
+     */
+    private $entry_meta;
+
+    /**
      * Set up plugin hooks.
      */
-    public function __construct($qr, $image_controller) {
+    public function __construct($qr, $image_controller, $entry_meta = null) {
         $this->qr = $qr;
         $this->image_controller = $image_controller;
+        $this->entry_meta = $entry_meta;
 
         // Allow shortcodes inside Gravity Forms notification messages.
         add_filter('gform_enable_shortcode_notification_message', '__return_true');
@@ -129,6 +137,10 @@ class PWE_QR_Notifications {
                     $data['size'],
                     $data['logo_url'] ?? ''
                 );
+
+                // Persist the same QR URL in entry meta. This keeps the entry/audit
+                // in sync even when the QR is used only as an attachment.
+                $this->persist_qr_meta($form_id, $entry, $data);
 
                 // Prepare the QR attachment whenever the notification checkbox is enabled,
                 // regardless of whether the shortcode renders an URL or an inline image.
@@ -231,8 +243,33 @@ class PWE_QR_Notifications {
                 continue;
             }
 
+            $this->persist_qr_meta($form_id, $entry, $data);
             $this->prepare_qr_attachment($data, $name . '|' . $data['size'], $seen);
         }
+    }
+
+
+    /**
+     * Persist QR URL for the current entry when notification processing creates QR data.
+     *
+     * @param int   $form_id Gravity Forms form ID.
+     * @param array $entry   Gravity Forms entry data.
+     * @param array $data    QR data returned by the generator.
+     *
+     * @return void
+     */
+    private function persist_qr_meta($form_id, $entry, $data) {
+        if (!$this->entry_meta || !method_exists($this->entry_meta, 'save_qr_data_to_entry_meta')) {
+            return;
+        }
+
+        $entry_id = absint($entry['id'] ?? 0);
+
+        if (!$entry_id) {
+            return;
+        }
+
+        $this->entry_meta->save_qr_data_to_entry_meta($entry_id, $form_id, $data);
     }
 
     /**

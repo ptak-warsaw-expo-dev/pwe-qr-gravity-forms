@@ -60,13 +60,10 @@ if (!class_exists('PWE_QR_Gravity_Forms')) {
             $entry_meta = new PWE_QR_Entry_Meta($this->qr, $this->image_controller);
 
             // Notification shortcodes and attachments.
-            new PWE_QR_Notifications($this->qr, $this->image_controller);
+            new PWE_QR_Notifications($this->qr, $this->image_controller, $entry_meta);
 
             // QR shortcodes on confirmation.
             new PWE_QR_Confirmations($this->qr, $this->image_controller);
-
-            // Save QR image URL into Gravity Forms entry meta.
-            new PWE_QR_Entry_Meta($this->qr, $this->image_controller);
 
             // Temporary tool for filling missing QR metadata in historical entries.
             new PWE_QR_Backfill_Tool($entry_meta);
