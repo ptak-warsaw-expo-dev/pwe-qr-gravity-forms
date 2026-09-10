@@ -19,6 +19,7 @@ class PWE_QR_Audit_Tool {
         $this->qr = $qr;
 
         add_action('admin_menu', [$this, 'register_submenu'], 31);
+        add_action('admin_post_pwe_qr_export_mismatches', [$this, 'export_mismatches_csv']);
     }
 
     public function register_submenu() {
@@ -147,6 +148,16 @@ class PWE_QR_Audit_Tool {
             }
             .pwe-qr-audit .pwe-qr-summary-item.none {
                 color: #50575e;
+            }
+            .pwe-qr-audit .pwe-qr-export {
+                display: flex;
+                flex-wrap: wrap;
+                gap: 10px 14px;
+                align-items: center;
+                margin: 10px 0 4px;
+            }
+            .pwe-qr-audit .pwe-qr-export span {
+                color: #646970;
             }
             .pwe-qr-audit .tablenav {
                 height: auto;
@@ -318,6 +329,7 @@ class PWE_QR_Audit_Tool {
         echo '<p>Pokazywane są aktywne wpisy tylko z formularzy, które mają feed PWE QR. Tabela jest stronicowana po ' . absint($this->per_page) . ' wpisów.</p>';
 
         $this->render_filters($active_forms, $selected_form_id, $search, $status_filter);
+        $this->render_export_button($selected_form_id, $search);
 
         echo '<div class="pwe-qr-summary">';
         echo '<span class="pwe-qr-summary-item">Znaleziono wpisów: ' . number_format_i18n($data['all_total']) . '</span>';
@@ -418,6 +430,204 @@ class PWE_QR_Audit_Tool {
         }
 
         echo '</form>';
+    }
+
+    private function render_export_button($selected_form_id, $search) {
+        $url = wp_nonce_url(
+            add_query_arg(
+                [
+                    'action'        => 'pwe_qr_export_mismatches',
+                    'audit_form_id' => $selected_form_id ?: 0,
+                    'audit_search'  => $search !== '' ? $search : '',
+                ],
+                admin_url('admin-post.php')
+            ),
+            'pwe_qr_export_mismatches'
+        );
+
+        echo '<div class="pwe-qr-export">';
+        echo '<a class="button button-primary" href="' . esc_url($url) . '">Eksportuj rozbieżne CSV</a>';
+        echo '<span>Eksport uwzględnia wybrany formularz i wyszukiwanie. Status jest zawsze ograniczony do wpisów rozbieżnych.</span>';
+        echo '</div>';
+    }
+
+    public function export_mismatches_csv() {
+        if (!current_user_can('manage_options')) {
+            wp_die('Brak uprawnień.');
+        }
+
+        check_admin_referer('pwe_qr_export_mismatches');
+
+        if (!class_exists('GFAPI')) {
+            wp_die('Gravity Forms nie jest dostępne.');
+        }
+
+        $selected_form_id = isset($_GET['audit_form_id']) ? absint($_GET['audit_form_id']) : 0;
+        $search = isset($_GET['audit_search']) ? sanitize_text_field(wp_unslash($_GET['audit_search'])) : '';
+
+        $forms = GFAPI::get_forms(true, false, 'title', 'ASC');
+        $active_forms = [];
+
+        foreach ($forms as $form) {
+            $form_id = absint($form['id'] ?? 0);
+
+            if (!$form_id) {
+                continue;
+            }
+
+            $feeds = $this->get_pwe_feeds($form_id);
+            $active_feeds = array_values(array_filter($feeds, static function($feed) {
+                return !empty($feed['is_active']);
+            }));
+
+            if (empty($active_feeds)) {
+                continue;
+            }
+
+            $active_forms[$form_id] = [
+                'form'  => $form,
+                'feeds' => $active_feeds,
+            ];
+        }
+
+        if ($selected_form_id) {
+            if (!isset($active_forms[$selected_form_id])) {
+                wp_die('Wybrany formularz nie ma aktywnego feedu PWE QR.');
+            }
+            $active_forms = [$selected_form_id => $active_forms[$selected_form_id]];
+        }
+
+        $domain = strtolower((string) wp_parse_url(home_url('/'), PHP_URL_HOST));
+        $domain_filename = preg_replace('/[^a-z0-9]+/i', '_', $domain);
+        $domain_filename = trim($domain_filename, '_');
+        $filename = $domain_filename . '-pwe-qr-rozbiezne-' . wp_date('Y-m-d-H-i-s') . '.csv';
+
+        nocache_headers();
+        header('Content-Type: text/csv; charset=UTF-8');
+        header('Content-Disposition: attachment; filename="' . $filename . '"');
+        header('X-Content-Type-Options: nosniff');
+
+        $out = fopen('php://output', 'w');
+
+        if (!$out) {
+            wp_die('Nie udało się utworzyć pliku CSV.');
+        }
+
+        // BOM sprawia, że polski Excel poprawnie rozpoznaje UTF-8.
+        fwrite($out, "\xEF\xBB\xBF");
+        fputcsv($out, [
+            'Domena',
+            'ID formularza',
+            'Entry ID',
+            'Data rejestracji',
+            'E-mail',
+            'Feed (QR custom_key 1)',
+            'RND',
+            'QR kod otrzymany przez zarejestrowanego',
+            'URL QR kodu',
+            'Wartość po przekierowaniu',
+        ], ';');
+
+        foreach ($active_forms as $form_id => $form_data) {
+            $form = $form_data['form'];
+            $feeds = $form_data['feeds'];
+            $email_field_ids = $this->get_email_field_ids($form);
+
+            $paging = ['offset' => 0, 'page_size' => 200];
+
+            do {
+                $entries = GFAPI::get_entries(
+                    $form_id,
+                    ['status' => 'active'],
+                    ['key' => 'id', 'direction' => 'ASC'],
+                    $paging
+                );
+
+                if (is_wp_error($entries) || empty($entries)) {
+                    break;
+                }
+
+                foreach ($entries as $entry) {
+                    $entry_id = absint($entry['id'] ?? 0);
+
+                    if (!$entry_id) {
+                        continue;
+                    }
+
+                    $email = $this->get_entry_email($entry, $email_field_ids);
+
+                    if ($search !== '') {
+                        $matches_id = ctype_digit($search) && (int) $search === $entry_id;
+                        $matches_email = stripos($email, $search) !== false;
+
+                        if (!$matches_id && !$matches_email) {
+                            continue;
+                        }
+                    }
+
+                    $qr_url = (string) gform_get_meta($entry_id, 'pwe_qr_code_url');
+                    $saved_value = $this->extract_qr_value($qr_url);
+
+                    if ($saved_value === '') {
+                        continue;
+                    }
+
+                    $redirect = $this->get_redirect_value_for_entry($form_id, $entry_id, $feeds);
+
+                    if ($redirect['value'] === '' || hash_equals((string) $redirect['value'], (string) $saved_value)) {
+                        continue;
+                    }
+
+                    $rnd = '';
+                    if (preg_match('/(rnd\d{5})/i', $saved_value, $rnd_match)) {
+                        $rnd = $rnd_match[1];
+                    }
+
+                    fputcsv($out, [
+                        $domain,
+                        $form_id,
+                        $entry_id,
+                        $entry['date_created'] ?? '',
+                        $email,
+                        $redirect['feed'],
+                        $rnd,
+                        $saved_value,
+                        $qr_url,
+                        $redirect['value'],
+                    ], ';');
+                }
+
+                $paging['offset'] += $paging['page_size'];
+            } while (count($entries) === $paging['page_size']);
+        }
+
+        fclose($out);
+        exit;
+    }
+
+    private function get_redirect_value_for_entry($form_id, $entry_id, $feeds) {
+        foreach ($feeds as $feed) {
+            if (empty($feed['is_active'])) {
+                continue;
+            }
+
+            [$key1, $key2] = $this->get_feed_custom_keys($feed);
+
+            if ($key1 === '') {
+                continue;
+            }
+
+            $value = $this->qr->generate_label($form_id, $entry_id, $key2, $key1);
+
+            if ($value !== '') {
+                return [
+                    'feed'  => $key1,
+                    'value' => $value,
+                ];
+            }
+        }
+
+        return ['feed' => '', 'value' => ''];
     }
 
     private function get_entries_page($active_form_ids, $selected_form_id, $search, $status_filter, $page) {
