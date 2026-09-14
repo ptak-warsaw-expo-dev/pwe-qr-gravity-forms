@@ -139,7 +139,298 @@ class PWE_QR_Entry_Meta {
             $form_id
         );
 
+        // Safety check: if the QR actually stored for the entry differs from
+        // the value generated from the active pwe_qr feed, notify the site admin.
+        $this->maybe_send_qr_mismatch_alert($entry_id, $form_id, $qr_url);
+
         return $qr_url;
+    }
+
+    /**
+     * Send an immediate e-mail alert when the QR stored for an entry differs
+     * from the value expected from the first active PWE QR feed.
+     *
+     * The alert is de-duplicated per exact mismatch so repeated hooks do not
+     * send the same warning several times.
+     *
+     * @param int    $entry_id Gravity Forms entry ID.
+     * @param int    $form_id  Gravity Forms form ID.
+     * @param string $qr_url   QR image URL stored in entry meta.
+     *
+     * @return void
+     */
+    private function maybe_send_qr_mismatch_alert($entry_id, $form_id, $qr_url) {
+        if (!class_exists('GFAPI') || !function_exists('wp_mail')) {
+            return;
+        }
+
+        $entry_id = absint($entry_id);
+        $form_id  = absint($form_id);
+
+        if (!$entry_id || !$form_id || empty($qr_url)) {
+            return;
+        }
+
+        $saved_value = $this->extract_qr_value_from_url($qr_url);
+
+        if ($saved_value === '') {
+            return;
+        }
+
+        $feeds = GFAPI::get_feeds(null, $form_id, 'pwe_qr');
+
+        if (is_wp_error($feeds) || empty($feeds) || !is_array($feeds)) {
+            return;
+        }
+
+        $active_feed = null;
+
+        foreach ($feeds as $feed) {
+            if (empty($feed['is_active'])) {
+                continue;
+            }
+
+            $meta = $feed['meta'] ?? [];
+            $feed_name = $meta['feedName'] ?? $meta['qr_name'] ?? '';
+
+            if ($feed_name === '') {
+                continue;
+            }
+
+            $active_feed = $feed;
+            break;
+        }
+
+        if (empty($active_feed)) {
+            return;
+        }
+
+        $meta = $active_feed['meta'] ?? [];
+        $fields = $meta['qrcodeFields'] ?? [];
+
+        $custom_key_1 = '';
+        $custom_key_2 = '';
+
+        if (
+            isset($fields[0]['custom_key']) &&
+            is_string($fields[0]['custom_key'])
+        ) {
+            $custom_key_1 = trim($fields[0]['custom_key']);
+        }
+
+        if (
+            isset($fields[1]['custom_key']) &&
+            is_string($fields[1]['custom_key'])
+        ) {
+            $custom_key_2 = trim($fields[1]['custom_key']);
+        }
+
+        // The source of truth for the fair prefix is the shortcode, not the
+        // value currently stored in the feed. The shortcode must return
+        // exactly 4 characters, e.g. TEST. The form ID is padded to 3 digits,
+        // so form 7 becomes TEST007.
+        $shortcode_prefix = trim(
+            wp_strip_all_tags(
+                do_shortcode('[trade_fair_feed_prefix]')
+            )
+        );
+
+        if (strlen($shortcode_prefix) !== 4) {
+            return;
+        }
+
+        $expected_custom_key_1 = $shortcode_prefix . str_pad(
+            (string) $form_id,
+            3,
+            '0',
+            STR_PAD_LEFT
+        );
+
+        $expected_value = $this->qr->generate_label(
+            $form_id,
+            $entry_id,
+            $custom_key_2,
+            $expected_custom_key_1
+        );
+
+        if ($expected_value === '' || hash_equals((string) $expected_value, (string) $saved_value)) {
+            return;
+        }
+
+        $mismatch_hash = hash(
+            'sha256',
+            $form_id . '|' .
+            $entry_id . '|' .
+            $saved_value . '|' .
+            $expected_value
+        );
+
+        $last_alert_hash = (string) gform_get_meta(
+            $entry_id,
+            'pwe_qr_mismatch_alert_hash'
+        );
+
+        if ($last_alert_hash !== '' && hash_equals($last_alert_hash, $mismatch_hash)) {
+            return;
+        }
+
+        $form = GFAPI::get_form($form_id);
+        $entry = GFAPI::get_entry($entry_id);
+
+        if (is_wp_error($entry)) {
+            $entry = [];
+        }
+
+        if (!$form || is_wp_error($form)) {
+            $form = ['id' => $form_id, 'title' => 'Formularz ' . $form_id, 'fields' => []];
+        }
+
+        $registration_email = $this->find_entry_email($form, $entry);
+        $domain = strtolower((string) wp_parse_url(home_url('/'), PHP_URL_HOST));
+        $feed_name = (string) ($meta['feedName'] ?? $meta['qr_name'] ?? '');
+        $feed_id = absint($active_feed['id'] ?? 0);
+
+        $recipient = apply_filters(
+            'pwe_qr_mismatch_alert_email',
+            [
+                'anton.melnychuk@warsawexpo.eu',
+                'piotr.krupniewski@warsawexpo.eu',
+                'jakub.chola@warsawexpo.eu',
+            ],
+            $entry,
+            $form,
+            $active_feed
+        );
+
+        if (is_array($recipient)) {
+            $recipient = array_filter(array_map('sanitize_email', $recipient));
+        } else {
+            $recipient = sanitize_email((string) $recipient);
+        }
+
+        if (empty($recipient)) {
+            return;
+        }
+
+        $subject = '[PWE QR ALERT] Rozbieżność QR - ' . $domain;
+
+        $entry_url = admin_url(
+            'admin.php?page=gf_entries&view=entry&id=' .
+            $form_id .
+            '&lid=' .
+            $entry_id
+        );
+
+        $body = implode("\n", [
+            'Wykryto rozbieżność kodu QR podczas rejestracji.',
+            '',
+            'Domena: ' . $domain,
+            'Strona: ' . home_url('/'),
+            'Formularz: ' . ($form['title'] ?? ('Formularz ' . $form_id)),
+            'Form ID: ' . $form_id,
+            'Entry ID: ' . $entry_id,
+            'E-mail rejestrującego: ' . ($registration_email !== '' ? $registration_email : '(brak)'),
+            '',
+            'Feed: ' . ($feed_name !== '' ? $feed_name : '(bez nazwy)'),
+            'Feed ID: ' . ($feed_id ?: '(brak)'),
+            'Prefix z [trade_fair_feed_prefix]: ' . $shortcode_prefix,
+            'Oczekiwany QR custom_key 1: ' . $expected_custom_key_1,
+            'QR custom_key 1 zapisany w feedzie: ' . ($custom_key_1 !== '' ? $custom_key_1 : '(brak)'),
+            'QR custom_key 2: ' . ($custom_key_2 !== '' ? $custom_key_2 : '(brak)'),
+            '',
+            'QR zapisany przy wpisie:',
+            $saved_value,
+            '',
+            'QR oczekiwany z feedu:',
+            $expected_value,
+            '',
+            'URL zapisanego QR:',
+            $qr_url,
+            '',
+            'Data wykrycia: ' . current_time('mysql'),
+            'Wpis w panelu:',
+            $entry_url,
+        ]);
+
+        $sent = wp_mail(
+            $recipient,
+            $subject,
+            $body,
+            ['Content-Type: text/plain; charset=UTF-8']
+        );
+
+        if ($sent) {
+            gform_update_meta(
+                $entry_id,
+                'pwe_qr_mismatch_alert_hash',
+                $mismatch_hash,
+                $form_id
+            );
+
+            gform_update_meta(
+                $entry_id,
+                'pwe_qr_mismatch_alert_sent_at',
+                current_time('mysql'),
+                $form_id
+            );
+        }
+    }
+
+    /**
+     * Extract the value query parameter from a stored QR image URL.
+     *
+     * @param string $url QR image URL.
+     *
+     * @return string
+     */
+    private function extract_qr_value_from_url($url) {
+        $url = html_entity_decode((string) $url, ENT_QUOTES, 'UTF-8');
+        $query = wp_parse_url($url, PHP_URL_QUERY);
+
+        if (!is_string($query) || $query === '') {
+            return '';
+        }
+
+        $params = [];
+        parse_str($query, $params);
+
+        return isset($params['value'])
+            ? sanitize_text_field((string) $params['value'])
+            : '';
+    }
+
+    /**
+     * Find the first e-mail value stored in an e-mail field of the entry.
+     *
+     * @param array $form  Gravity Forms form.
+     * @param array $entry Gravity Forms entry.
+     *
+     * @return string
+     */
+    private function find_entry_email($form, $entry) {
+        if (empty($form['fields']) || !is_array($form['fields']) || empty($entry)) {
+            return '';
+        }
+
+        foreach ($form['fields'] as $field) {
+            if (!is_object($field) || ($field->type ?? '') !== 'email') {
+                continue;
+            }
+
+            $field_id = (string) ($field->id ?? '');
+
+            if ($field_id === '') {
+                continue;
+            }
+
+            $email = sanitize_email((string) ($entry[$field_id] ?? ''));
+
+            if ($email !== '') {
+                return $email;
+            }
+        }
+
+        return '';
     }
 
     /**

@@ -56,6 +56,10 @@ class PWE_QR_Notifications {
 
         // Add QR attachment as normal file attachment.
         add_action('phpmailer_init', [$this, 'inject_qr_attachments']);
+
+        // Record which Gravity Forms notification was processed for each entry.
+        // This gives the audit tool an exact notification ID for future registrations/resends.
+        add_filter('gform_pre_send_email', [$this, 'record_sent_notification'], 100, 4);
     }
 
     /**
@@ -270,6 +274,66 @@ class PWE_QR_Notifications {
         }
 
         $this->entry_meta->save_qr_data_to_entry_meta($entry_id, $form_id, $data);
+    }
+
+    /**
+     * Record the notification that Gravity Forms is about to send for an entry.
+     *
+     * Gravity Forms does not persist the notification ID on the entry by default.
+     * Keeping a short history lets the QR audit resend the same user notification later.
+     *
+     * @param array  $email
+     * @param string $message_format
+     * @param array  $notification
+     * @param array  $entry
+     *
+     * @return array
+     */
+    public function record_sent_notification($email, $message_format, $notification, $entry) {
+        if (!empty($email['abort_email'])) {
+            return $email;
+        }
+
+        $entry_id = absint($entry['id'] ?? 0);
+        $notification_id = (string) ($notification['id'] ?? '');
+
+        if (!$entry_id || $notification_id === '') {
+            return $email;
+        }
+
+        $meta_key = 'pwe_qr_notification_history';
+        $history_raw = gform_get_meta($entry_id, $meta_key);
+        $history = [];
+
+        if (is_string($history_raw) && $history_raw !== '') {
+            $decoded = json_decode($history_raw, true);
+            if (is_array($decoded)) {
+                $history = $decoded;
+            }
+        } elseif (is_array($history_raw)) {
+            $history = $history_raw;
+        }
+
+        $history[] = [
+            'id'      => $notification_id,
+            'name'    => (string) ($notification['name'] ?? ''),
+            'to'      => is_array($email['to'] ?? '') ? implode(',', $email['to']) : (string) ($email['to'] ?? ''),
+            'subject' => (string) ($email['subject'] ?? ''),
+            'date'    => current_time('mysql'),
+        ];
+
+        // Enough for diagnostics without growing entry meta forever.
+        if (count($history) > 20) {
+            $history = array_slice($history, -20);
+        }
+
+        gform_update_meta(
+            $entry_id,
+            $meta_key,
+            wp_json_encode($history, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES)
+        );
+
+        return $email;
     }
 
     /**
