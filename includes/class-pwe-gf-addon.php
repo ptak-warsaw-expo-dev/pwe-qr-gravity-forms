@@ -247,15 +247,14 @@ class PWE_GF_QR_Addon extends GFFeedAddOn {
         $first_custom_key     = $this->sanitize_custom_key_setting($settings['qrcodeCustomKey1'] ?? '');
         $second_custom_key    = $this->sanitize_custom_key_setting($settings['qrcodeCustomKey2'] ?? '');
 
-        // [trade_fair_feed_prefix] is the primary source of truth for QR custom_key 1.
+        // [trade_fair_feed_prefix] is used only when a NEW feed is created.
         // Example: INDU + form 131 => INDU131.
-        // A copied/old/manual feed value must not override a valid shortcode prefix.
-        if ($shortcode_custom_key !== '') {
-            $first_custom_key = $shortcode_custom_key;
-        }
-
-        // Reuse existing values only when the authoritative source is unavailable.
-        if (!empty($feed_id)) {
+        // Existing feeds keep their saved/manual custom_key 1.
+        if (empty($feed_id)) {
+            if ($shortcode_custom_key !== '') {
+                $first_custom_key = $shortcode_custom_key;
+            }
+        } else {
             $existing_feed   = $this->get_feed($feed_id);
             $existing_fields = $existing_feed['meta']['qrcodeFields'] ?? [];
 
@@ -310,20 +309,6 @@ class PWE_GF_QR_Addon extends GFFeedAddOn {
         $index      = absint($index);
         $field_name = $index === 0 ? 'qrcodeCustomKey1' : 'qrcodeCustomKey2';
 
-        // QR custom_key 1 always follows [trade_fair_feed_prefix] first.
-        // This also prevents a copied feed from visually retaining an old prefix.
-        if ($index === 0) {
-            $form_id = $this->get_current_form_id();
-
-            if ($form_id) {
-                $shortcode_value = $this->build_prefix_form_part($form_id);
-
-                if ($shortcode_value !== '') {
-                    return $shortcode_value;
-                }
-            }
-        }
-
         $posted_value = $this->get_posted_setting_value($field_name);
 
         if ($posted_value !== '') {
@@ -334,6 +319,16 @@ class PWE_GF_QR_Addon extends GFFeedAddOn {
 
         if ($existing_value !== '') {
             return $existing_value;
+        }
+
+        if ($index === 0) {
+            $form_id = $this->get_current_form_id();
+
+            if ($form_id) {
+                return $this->build_prefix_form_part($form_id);
+            }
+
+            return '';
         }
 
         // QR custom_key 2 must never be empty. For a new or incomplete feed

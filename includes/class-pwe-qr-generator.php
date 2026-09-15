@@ -22,22 +22,14 @@ class PWE_QR_Generator {
         $entry_id = absint($entry_id);
         $feed_prefix = is_string($feed_prefix) ? trim($feed_prefix) : '';
 
-        // Highest priority: [trade_fair_feed_prefix].
-        // It returns the authoritative 4-letter fair prefix, e.g. INDU.
-        $shortcode_prefix = do_shortcode('[trade_fair_feed_prefix]');
-        $shortcode_prefix = is_string($shortcode_prefix) ? wp_strip_all_tags($shortcode_prefix) : '';
-        $shortcode_prefix = preg_replace('/[^a-z]/i', '', $shortcode_prefix);
-        $shortcode_prefix = strtoupper(trim($shortcode_prefix));
-
         $form_part = str_pad(absint($form_id), 3, '0', STR_PAD_LEFT);
 
-        if (strlen($shortcode_prefix) === 4) {
-            $prefix_form_part = $shortcode_prefix . $form_part;
-        } elseif ($feed_prefix !== '') {
-            // Fallback only when the shortcode is unexpectedly invalid.
+        // Runtime QR generation follows the prefix SAVED IN THE FEED.
+        // [trade_fair_feed_prefix] is only used when a new feed/form is created.
+        if ($feed_prefix !== '') {
             $prefix_form_part = $feed_prefix;
         } else {
-            // Last-resort backward-compatible fallback for incomplete legacy setups.
+            // Backward-compatible fallback for incomplete legacy setups.
             $domain = $_SERVER['HTTP_HOST'] ?? do_shortcode('[trade_fair_domainadress]');
             $clean = preg_replace('/[^a-z]/i', '', $domain);
             $prefix = strtoupper(substr($clean, 0, 4));

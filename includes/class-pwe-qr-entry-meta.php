@@ -225,32 +225,17 @@ class PWE_QR_Entry_Meta {
             $custom_key_2 = trim($fields[1]['custom_key']);
         }
 
-        // The source of truth for the fair prefix is the shortcode, not the
-        // value currently stored in the feed. The shortcode must return
-        // exactly 4 characters, e.g. TEST. The form ID is padded to 3 digits,
-        // so form 7 becomes TEST007.
-        $shortcode_prefix = trim(
-            wp_strip_all_tags(
-                do_shortcode('[trade_fair_feed_prefix]')
-            )
-        );
-
-        if (strlen($shortcode_prefix) !== 4) {
+        // Runtime consistency is checked against the ACTIVE FEED.
+        // [trade_fair_feed_prefix] is only used when a new feed/form is created.
+        if ($custom_key_1 === '') {
             return;
         }
-
-        $expected_custom_key_1 = $shortcode_prefix . str_pad(
-            (string) $form_id,
-            3,
-            '0',
-            STR_PAD_LEFT
-        );
 
         $expected_value = $this->qr->generate_label(
             $form_id,
             $entry_id,
             $custom_key_2,
-            $expected_custom_key_1
+            $custom_key_1
         );
 
         if ($expected_value === '' || hash_equals((string) $expected_value, (string) $saved_value)) {
@@ -333,8 +318,6 @@ class PWE_QR_Entry_Meta {
             '',
             'Feed: ' . ($feed_name !== '' ? $feed_name : '(bez nazwy)'),
             'Feed ID: ' . ($feed_id ?: '(brak)'),
-            'Prefix z [trade_fair_feed_prefix]: ' . $shortcode_prefix,
-            'Oczekiwany QR custom_key 1: ' . $expected_custom_key_1,
             'QR custom_key 1 zapisany w feedzie: ' . ($custom_key_1 !== '' ? $custom_key_1 : '(brak)'),
             'QR custom_key 2: ' . ($custom_key_2 !== '' ? $custom_key_2 : '(brak)'),
             '',
