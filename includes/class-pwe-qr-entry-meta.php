@@ -142,8 +142,137 @@ class PWE_QR_Entry_Meta {
         // Safety check: if the QR actually stored for the entry differs from
         // the value generated from the active pwe_qr feed, notify the site admin.
         $this->maybe_send_qr_mismatch_alert($entry_id, $form_id, $qr_url);
+        $this->maybe_send_feed_prefix_warning($entry_id, $form_id, $qr_url);
 
         return $qr_url;
+    }
+
+    private function maybe_send_feed_prefix_warning($entry_id, $form_id, $qr_url) {
+        if (!class_exists('GFAPI') || !function_exists('wp_mail')) {
+            return;
+        }
+
+        $entry_id = absint($entry_id);
+        $form_id  = absint($form_id);
+
+        if (!$entry_id || !$form_id) {
+            return;
+        }
+
+        $shortcode_prefix = trim(wp_strip_all_tags(do_shortcode('[trade_fair_feed_prefix]')));
+        $shortcode_prefix = preg_replace('/[^a-z]/i', '', $shortcode_prefix);
+        $shortcode_prefix = strtoupper($shortcode_prefix);
+
+        if (strlen($shortcode_prefix) !== 4) {
+            return;
+        }
+
+        $expected_custom_key_1 = $shortcode_prefix . str_pad((string) $form_id, 3, '0', STR_PAD_LEFT);
+
+        $feeds = GFAPI::get_feeds(null, $form_id, 'pwe_qr');
+
+        if (is_wp_error($feeds) || empty($feeds) || !is_array($feeds)) {
+            return;
+        }
+
+        $active_feed = null;
+
+        foreach ($feeds as $feed) {
+            if (!empty($feed['is_active'])) {
+                $active_feed = $feed;
+                break;
+            }
+        }
+
+        if (empty($active_feed)) {
+            return;
+        }
+
+        $meta = $active_feed['meta'] ?? [];
+        $fields = $meta['qrcodeFields'] ?? [];
+
+        $custom_key_1 = isset($fields[0]['custom_key']) && is_string($fields[0]['custom_key'])
+            ? trim($fields[0]['custom_key'])
+            : '';
+
+        $custom_key_2 = isset($fields[1]['custom_key']) && is_string($fields[1]['custom_key'])
+            ? trim($fields[1]['custom_key'])
+            : '';
+
+        if ($custom_key_1 === '' || hash_equals($expected_custom_key_1, $custom_key_1)) {
+            return;
+        }
+
+        $warning_hash = hash('sha256', $form_id . '|' . $entry_id . '|' . $custom_key_1 . '|' . $expected_custom_key_1);
+
+        $last_warning_hash = (string) gform_get_meta($entry_id, 'pwe_qr_feed_prefix_warning_hash');
+
+        if ($last_warning_hash !== '' && hash_equals($last_warning_hash, $warning_hash)) {
+            return;
+        }
+
+        $form = GFAPI::get_form($form_id);
+        $entry = GFAPI::get_entry($entry_id);
+
+        if (is_wp_error($entry)) {
+            $entry = [];
+        }
+
+        if (!$form || is_wp_error($form)) {
+            $form = ['id' => $form_id, 'title' => 'Formularz ' . $form_id, 'fields' => []];
+        }
+
+        $registration_email = $this->find_entry_email($form, $entry);
+        $domain = strtolower((string) wp_parse_url(home_url('/'), PHP_URL_HOST));
+        $feed_name = (string) ($meta['feedName'] ?? $meta['qr_name'] ?? '');
+        $feed_id = absint($active_feed['id'] ?? 0);
+        $saved_value = $this->extract_qr_value_from_url($qr_url);
+
+        $recipient = [
+            'anton.melnychuk@warsawexpo.eu',
+            'piotr.krupniewski@warsawexpo.eu',
+            'jakub.chola@warsawexpo.eu',
+        ];
+
+        $subject = '[PWE QR WARNING] Prefix feedu różni się od shortcode - ' . $domain;
+
+        $entry_url = admin_url(
+            'admin.php?page=gf_entries&view=entry&id=' . $form_id . '&lid=' . $entry_id
+        );
+
+        $body = implode("\n", [
+            'Wykryto niezgodność konfiguracji prefixu PWE QR.',
+            '',
+            'QR zapisany przy wpisie jest zgodny z feedem, ale prefix aktywnego feedu różni się od [trade_fair_feed_prefix].',
+            '',
+            'Domena: ' . $domain,
+            'Formularz: ' . ($form['title'] ?? ('Formularz ' . $form_id)),
+            'Form ID: ' . $form_id,
+            'Entry ID: ' . $entry_id,
+            'E-mail rejestrującego: ' . ($registration_email !== '' ? $registration_email : '(brak)'),
+            '',
+            'Feed: ' . ($feed_name !== '' ? $feed_name : '(bez nazwy)'),
+            'Feed ID: ' . ($feed_id ?: '(brak)'),
+            'Prefix z [trade_fair_feed_prefix]: ' . $shortcode_prefix,
+            'Oczekiwany QR custom_key 1: ' . $expected_custom_key_1,
+            'QR custom_key 1 zapisany w feedzie: ' . $custom_key_1,
+            'QR custom_key 2: ' . ($custom_key_2 !== '' ? $custom_key_2 : '(brak)'),
+            '',
+            'QR zapisany przy wpisie:',
+            ($saved_value !== '' ? $saved_value : '(brak)'),
+            '',
+            'URL QR:',
+            ($qr_url !== '' ? $qr_url : '(brak)'),
+            '',
+            'Data wykrycia: ' . current_time('mysql'),
+            'Wpis w panelu:',
+            $entry_url,
+        ]);
+
+        if (wp_mail($recipient, $subject, $body, ['Content-Type: text/plain; charset=UTF-8'])) {
+            gform_update_meta($entry_id, 'pwe_qr_feed_prefix_warning_hash', $warning_hash, $form_id);
+            gform_update_meta($entry_id, 'pwe_qr_feed_prefix_warning_sent_at', current_time('mysql'), $form_id);
+        }
     }
 
     /**

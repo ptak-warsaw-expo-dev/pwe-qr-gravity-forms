@@ -155,6 +155,9 @@ class PWE_QR_Audit_Tool {
             .pwe-qr-audit .pwe-qr-summary-item.none {
                 color: #50575e;
             }
+            .pwe-qr-audit .pwe-qr-summary-item.resend {
+                color: #9a6700;
+            }
             .pwe-qr-audit .pwe-qr-export {
                 display: flex;
                 flex-wrap: wrap;
@@ -370,6 +373,7 @@ class PWE_QR_Audit_Tool {
         echo '<span class="pwe-qr-summary-item ok">Zgodne: ' . number_format_i18n($data['counts']['ok']) . '</span>';
         echo '<span class="pwe-qr-summary-item bad">Rozbieżne: ' . number_format_i18n($data['counts']['bad']) . '</span>';
         echo '<span class="pwe-qr-summary-item none">Brak danych: ' . number_format_i18n($data['counts']['none']) . '</span>';
+        echo '<span class="pwe-qr-summary-item resend">Resendy: ' . number_format_i18n($data['counts']['resend']) . '</span>';
         echo '</div>';
 
         $this->render_resend_tools();
@@ -1235,7 +1239,7 @@ class PWE_QR_Audit_Tool {
                 'entries'   => [],
                 'total'     => 0,
                 'all_total' => 0,
-                'counts'    => ['ok' => 0, 'bad' => 0, 'none' => 0],
+                'counts'    => ['ok' => 0, 'bad' => 0, 'none' => 0, 'resend' => 0],
             ];
         }
 
@@ -1276,11 +1280,15 @@ class PWE_QR_Audit_Tool {
         $where_sql = implode(' AND ', $where);
 
         $list_sql = "SELECT e.id, e.form_id, e.date_created,
-                            qm.meta_value AS pwe_qr_code_url
+                            qm.meta_value AS pwe_qr_code_url,
+                            rqm.meta_value AS pwe_qr_resend_code_url
                      FROM {$entry_table} e
                      LEFT JOIN {$meta_table} qm
                        ON qm.entry_id = e.id
                       AND qm.meta_key = 'pwe_qr_code_url'
+                     LEFT JOIN {$meta_table} rqm
+                       ON rqm.entry_id = e.id
+                      AND rqm.meta_key = 'pwe_qr_resend_code_url'
                      WHERE {$where_sql}
                      ORDER BY e.id DESC";
 
@@ -1288,7 +1296,7 @@ class PWE_QR_Audit_Tool {
         $rows = (array) $wpdb->get_results($list_query, ARRAY_A);
 
         $feeds_cache = [];
-        $counts = ['ok' => 0, 'bad' => 0, 'none' => 0];
+        $counts = ['ok' => 0, 'bad' => 0, 'none' => 0, 'resend' => 0];
         $filtered_rows = [];
 
         foreach ($rows as $row) {
@@ -1307,6 +1315,11 @@ class PWE_QR_Audit_Tool {
             $comparison = $this->compare_entry_qr_light($form_id, $entry_id, $feeds_cache[$form_id], $saved_value);
 
             $counts[$comparison]++;
+
+            if (!empty($row['pwe_qr_resend_code_url'])) {
+                $counts['resend']++;
+            }
+
             $row['comparison'] = $comparison;
 
             if ($status_filter !== '' && $comparison !== $status_filter) {
