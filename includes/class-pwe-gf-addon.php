@@ -243,11 +243,18 @@ class PWE_GF_QR_Addon extends GFFeedAddOn {
      * @return int|WP_Error
      */
     public function save_feed_settings($feed_id, $form_id, $settings) {
-        $first_custom_key  = $this->sanitize_custom_key_setting($settings['qrcodeCustomKey1'] ?? '');
-        $second_custom_key = $this->sanitize_custom_key_setting($settings['qrcodeCustomKey2'] ?? '');
+        $shortcode_custom_key = $this->build_prefix_form_part($form_id);
+        $first_custom_key     = $this->sanitize_custom_key_setting($settings['qrcodeCustomKey1'] ?? '');
+        $second_custom_key    = $this->sanitize_custom_key_setting($settings['qrcodeCustomKey2'] ?? '');
 
-        // If a submitted helper field is empty, reuse the existing qrcodeFields value.
-        // This prevents accidental data loss when editing old feeds or partially saved feeds.
+        // [trade_fair_feed_prefix] is the primary source of truth for QR custom_key 1.
+        // Example: INDU + form 131 => INDU131.
+        // A copied/old/manual feed value must not override a valid shortcode prefix.
+        if ($shortcode_custom_key !== '') {
+            $first_custom_key = $shortcode_custom_key;
+        }
+
+        // Reuse existing values only when the authoritative source is unavailable.
         if (!empty($feed_id)) {
             $existing_feed   = $this->get_feed($feed_id);
             $existing_fields = $existing_feed['meta']['qrcodeFields'] ?? [];
@@ -259,11 +266,6 @@ class PWE_GF_QR_Addon extends GFFeedAddOn {
             if ($second_custom_key === '') {
                 $second_custom_key = $this->get_custom_key_from_fields($existing_fields, 1);
             }
-        }
-
-        // Fallbacks for new feeds or feeds with incomplete QR metadata.
-        if ($first_custom_key === '') {
-            $first_custom_key = $this->build_prefix_form_part($form_id);
         }
 
         if ($second_custom_key === '') {
@@ -308,6 +310,20 @@ class PWE_GF_QR_Addon extends GFFeedAddOn {
         $index      = absint($index);
         $field_name = $index === 0 ? 'qrcodeCustomKey1' : 'qrcodeCustomKey2';
 
+        // QR custom_key 1 always follows [trade_fair_feed_prefix] first.
+        // This also prevents a copied feed from visually retaining an old prefix.
+        if ($index === 0) {
+            $form_id = $this->get_current_form_id();
+
+            if ($form_id) {
+                $shortcode_value = $this->build_prefix_form_part($form_id);
+
+                if ($shortcode_value !== '') {
+                    return $shortcode_value;
+                }
+            }
+        }
+
         $posted_value = $this->get_posted_setting_value($field_name);
 
         if ($posted_value !== '') {
@@ -318,16 +334,6 @@ class PWE_GF_QR_Addon extends GFFeedAddOn {
 
         if ($existing_value !== '') {
             return $existing_value;
-        }
-
-        // For a new feed prefill QR custom_key 1 from [trade_fair_feed_prefix]
-        // and append the zero-padded Gravity Forms form ID.
-        if ($index === 0) {
-            $form_id = $this->get_current_form_id();
-
-            if ($form_id) {
-                return $this->build_prefix_form_part($form_id);
-            }
         }
 
         // QR custom_key 2 must never be empty. For a new or incomplete feed
@@ -370,8 +376,13 @@ class PWE_GF_QR_Addon extends GFFeedAddOn {
     private function build_prefix_form_part($form_id) {
         $prefix = do_shortcode('[trade_fair_feed_prefix]');
         $prefix = is_string($prefix) ? wp_strip_all_tags($prefix) : '';
-        $prefix = preg_replace('/[^a-z0-9]/i', '', $prefix);
+        $prefix = preg_replace('/[^a-z]/i', '', $prefix);
         $prefix = strtoupper(trim($prefix));
+
+        // The fair prefix is always exactly 4 letters, e.g. INDU.
+        if (strlen($prefix) !== 4) {
+            return '';
+        }
 
         $form_part = str_pad(absint($form_id), 3, '0', STR_PAD_LEFT);
 
