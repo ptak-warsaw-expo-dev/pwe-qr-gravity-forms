@@ -203,6 +203,27 @@ class PWE_QR_Entry_Meta {
             return;
         }
 
+        $domain = strtolower((string) wp_parse_url(home_url('/'), PHP_URL_HOST));
+        $warning_day = current_time('Ymd');
+        $blog_id = function_exists('get_current_blog_id')
+            ? absint(get_current_blog_id())
+            : 0;
+
+        // Explicit per-site + per-form + per-day key.
+        // Example: pwe_qr_feed_prefix_warning_1_271_20260917
+        // This intentionally does NOT share the throttle between different forms.
+        $daily_warning_key = sprintf(
+            'pwe_qr_feed_prefix_warning_%d_%d_%s',
+            $blog_id,
+            $form_id,
+            $warning_day
+        );
+
+        // Max one prefix warning per calendar day for this exact form.
+        if (get_transient($daily_warning_key)) {
+            return;
+        }
+
         $warning_hash = hash('sha256', $form_id . '|' . $entry_id . '|' . $custom_key_1 . '|' . $expected_custom_key_1);
 
         $last_warning_hash = (string) gform_get_meta($entry_id, 'pwe_qr_feed_prefix_warning_hash');
@@ -223,7 +244,6 @@ class PWE_QR_Entry_Meta {
         }
 
         $registration_email = $this->find_entry_email($form, $entry);
-        $domain = strtolower((string) wp_parse_url(home_url('/'), PHP_URL_HOST));
         $feed_name = (string) ($meta['feedName'] ?? $meta['qr_name'] ?? '');
         $feed_id = absint($active_feed['id'] ?? 0);
         $saved_value = $this->extract_qr_value_from_url($qr_url);
@@ -234,7 +254,7 @@ class PWE_QR_Entry_Meta {
             'jakub.chola@warsawexpo.eu',
         ];
 
-        $subject = '[PWE QR WARNING] Prefix feedu różni się od shortcode - ' . $domain;
+        $subject = '[PWE QR WARNING]['. $domain .'] - Prefix feedu różni się od shortcode';
 
         $entry_url = admin_url(
             'admin.php?page=gf_entries&view=entry&id=' . $form_id . '&lid=' . $entry_id
@@ -270,6 +290,9 @@ class PWE_QR_Entry_Meta {
         ]);
 
         if (wp_mail($recipient, $subject, $body, ['Content-Type: text/plain; charset=UTF-8'])) {
+            // The date is part of the key, so a new day automatically gets a fresh slot.
+            set_transient($daily_warning_key, 1, 2 * DAY_IN_SECONDS);
+
             gform_update_meta($entry_id, 'pwe_qr_feed_prefix_warning_hash', $warning_hash, $form_id);
             gform_update_meta($entry_id, 'pwe_qr_feed_prefix_warning_sent_at', current_time('mysql'), $form_id);
         }
@@ -426,7 +449,7 @@ class PWE_QR_Entry_Meta {
             return;
         }
 
-        $subject = '[PWE QR ALERT] Rozbieżność QR - ' . $domain;
+        $subject = '[PWE QR ALERT]['. $domain .'] - Rozbieżność QR';
 
         $entry_url = admin_url(
             'admin.php?page=gf_entries&view=entry&id=' .

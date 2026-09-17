@@ -19,28 +19,18 @@ class PWE_QR_Backfill_Tool {
     public function __construct($entry_meta) {
         $this->entry_meta = $entry_meta;
 
-        add_action('admin_menu', [$this, 'register_submenu'], 30);
+        add_action('pwe_qr_audit_tools', [$this, 'render_audit_section']);
         add_action('wp_ajax_pwe_qr_backfill_scan', [$this, 'ajax_scan']);
         add_action('wp_ajax_pwe_qr_backfill_generate', [$this, 'ajax_generate']);
     }
 
-    public function register_submenu() {
-        add_submenu_page(
-            'gf_edit_forms',
-            'Uzupełnij brakujące QR',
-            'Uzupełnij QR',
-            'manage_options',
-            'pwe-qr-backfill',
-            [$this, 'render_page']
-        );
-    }
-
-    public function render_page() {
+    public function render_audit_section() {
         if (!current_user_can('manage_options')) {
-            wp_die('Brak uprawnień.');
+            return;
         }
 
-        echo '<div class="wrap"><h1>Uzupełnij brakujące kody QR</h1>';
+        echo '<div class="pwe-qr-section">';
+        echo '<h2>Uzupełnij brakujące QR</h2>';
         $this->render_panel();
         echo '</div>';
     }
@@ -49,7 +39,7 @@ class PWE_QR_Backfill_Tool {
 
         $nonce = wp_create_nonce('pwe_qr_backfill');
         ?>
-        <div class="notice notice-info pwe-qr-backfill" style="padding:16px 18px; border-left-color:#7c3aed; margin-top:16px;">
+        <div class="pwe-qr-backfill" style="padding:16px 18px; border:1px solid #c3c4c7; border-left:4px solid #7c3aed; background:#fff; margin-top:12px;">
             <h2 style="margin:0 0 8px;">PWE QR – uzupełnianie brakujących kodów</h2>
             <p style="max-width:950px;">
                 Narzędzie sprawdza formularze posiadające aktywny feed <code>pwe_qr</code>,

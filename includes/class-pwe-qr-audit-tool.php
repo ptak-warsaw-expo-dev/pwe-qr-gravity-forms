@@ -9,6 +9,9 @@ if (!defined('ABSPATH')) {
  */
 class PWE_QR_Audit_Tool {
 
+    private $notification_sent_cache = [];
+    private $notification_error_cache = [];
+
     /** @var PWE_QR_Generator */
     private $qr;
 
@@ -21,6 +24,7 @@ class PWE_QR_Audit_Tool {
         add_action('admin_menu', [$this, 'register_submenu'], 31);
         add_action('admin_post_pwe_qr_export_mismatches', [$this, 'export_mismatches_csv']);
         add_action('wp_ajax_pwe_qr_resend_notifications', [$this, 'ajax_resend_notifications']);
+        add_action('wp_ajax_pwe_qr_bulk_language_preview', [$this, 'ajax_bulk_language_preview']);
     }
 
     public function register_submenu() {
@@ -52,6 +56,10 @@ class PWE_QR_Audit_Tool {
 
         $this->render_styles();
         $this->render_forms_table($forms);
+
+        // Additional QR maintenance tools live inside the audit page.
+        do_action('pwe_qr_audit_tools');
+
         $this->render_entries_table($forms);
 
         echo '</div>';
@@ -99,6 +107,7 @@ class PWE_QR_Audit_Tool {
                 word-break: break-word;
             }
             .pwe-qr-audit .pwe-qr-status {
+                margin-top: 6px;
                 display: inline-block;
                 padding: 3px 8px;
                 border-radius: 999px;
@@ -116,9 +125,9 @@ class PWE_QR_Audit_Tool {
             .pwe-qr-audit .pwe-qr-status.resend {
                 background: #fff3cd;
                 color: #7a5a00;
-                margin-top: 6px;
+margin-top: 6px;
             }
-            .pwe-qr-audit .pwe-qr-status.none {
+.pwe-qr-audit .pwe-qr-status.none {
                 background: #f0f0f1;
                 color: #50575e;
             }
@@ -155,7 +164,94 @@ class PWE_QR_Audit_Tool {
             .pwe-qr-audit .pwe-qr-summary-item.none {
                 color: #50575e;
             }
+            .pwe-qr-audit .pwe-qr-summary-item.notification-none {
+                color: #646970;
+            }
+            .pwe-qr-audit .pwe-qr-summary-item.notification-missing {
+                color: #7c3aed;
+            }
+            .pwe-qr-audit .pwe-qr-summary-item.notification-error {
+                color: #b32d2e;
+            }
             .pwe-qr-audit .pwe-qr-summary-item.resend {
+                color: #9a6700;
+            }
+            .pwe-qr-audit .pwe-qr-status.none {
+                background: #f0f0f1;
+                color: #50575e;
+            }
+            .pwe-qr-audit .pwe-qr-status.resend {
+                background: #fff3cd;
+                color: #7a5b00;
+            }
+            .pwe-qr-audit .pwe-qr-status.notification-none {
+                background: #f0f0f1;
+                color: #50575e;
+            }
+            .pwe-qr-audit .pwe-qr-status.notification-missing {
+                background: #f3e8ff;
+                color: #7c3aed;
+            }
+            .pwe-qr-audit .pwe-qr-status.notification-error {
+                background: #fce8e8;
+                color: #b32d2e;
+            }
+            .pwe-qr-audit .pwe-qr-notification-error-column {
+                color: #b32d2e;
+            }
+            .pwe-qr-audit .pwe-qr-notification-error-column strong {
+                display: block;
+            }
+            .pwe-qr-audit .pwe-qr-notification-error-column small {
+                display: block;
+                margin-top: 4px;
+                line-height: 1.35;
+                word-break: break-word;
+            }
+            .pwe-qr-audit .pwe-qr-form-stats {
+                display: inline-flex;
+                align-items: center;
+                gap: 4px;
+                font-weight: 700;
+                white-space: nowrap;
+            }
+            .pwe-qr-audit .pwe-qr-form-stats .ok {
+                color: #116329;
+            }
+            .pwe-qr-audit .pwe-qr-form-stats .bad {
+                color: #8a2424;
+            }
+            .pwe-qr-audit .pwe-qr-form-stats .none {
+                color: #646970;
+            }
+            .pwe-qr-audit .pwe-qr-form-stats .notification-none {
+                color: #646970;
+            }
+            .pwe-qr-audit .pwe-qr-form-stats .notification-missing {
+                color: #7c3aed;
+            }
+            .pwe-qr-audit .pwe-qr-form-stats .notification-error {
+                color: #b32d2e;
+            }
+            .pwe-qr-audit .pwe-qr-form-stats .resend {
+                color: #9a6700;
+            }
+            .pwe-qr-audit .pwe-qr-form-stats .sep {
+                color: #8c8f94;
+                font-weight: 400;
+            }
+            .pwe-qr-audit .pwe-qr-bulk-language {
+                margin: 16px 0;
+                padding: 16px 18px;
+                background: #fff;
+                border: 1px solid #c3c4c7;
+                border-left: 4px solid #2271b1;
+            }
+            .pwe-qr-audit .pwe-qr-bulk-language h3 {
+                margin-top: 0;
+            }
+            .pwe-qr-audit .pwe-qr-resend-notifications {
+                margin-top: 6px;
                 color: #9a6700;
             }
             .pwe-qr-audit .pwe-qr-export {
@@ -262,7 +358,7 @@ class PWE_QR_Audit_Tool {
 
     private function render_forms_table($forms) {
         echo '<div class="pwe-qr-section">';
-        echo '<h2>Aktywne formularze i feedy PWE QR</h2>';
+        echo '<h2>Aktywne formularze i feedy QR</h2>';
         echo '<p>Wyświetlane są tylko aktywne formularze, które nie znajdują się w koszu.</p>';
 
         echo '<div class="pwe-qr-table-wrap">';
@@ -270,24 +366,33 @@ class PWE_QR_Audit_Tool {
         echo '<thead><tr>';
         echo '<th style="width:70px;">ID</th>';
         echo '<th>Formularz</th>';
-        echo '<th>Feedy PWE QR</th>';
+        echo '<th style="width:180px;" title="Zgodne / Rozbieżne / Brak danych / Resendy">Rejestracje</th>';
+        echo '<th>Feedy QR</th>';
         echo '<th style="width:190px;">QR custom_key 1</th>';
         echo '<th style="width:190px;">QR custom_key 2</th>';
         echo '</tr></thead><tbody>';
 
         if (empty($forms)) {
-            echo '<tr><td colspan="5">Brak aktywnych formularzy.</td></tr>';
+            echo '<tr><td colspan="6">Brak aktywnych formularzy.</td></tr>';
         } else {
             foreach ($forms as $form) {
                 $form_id = absint($form['id'] ?? 0);
                 $feeds = $this->get_pwe_feeds($form_id);
 
+                $registration_stats = $this->get_form_registration_stats($form_id, $feeds);
+
                 echo '<tr>';
                 echo '<td>' . esc_html($form_id) . '</td>';
                 echo '<td><strong>' . esc_html($form['title'] ?? ('Formularz ' . $form_id)) . '</strong></td>';
 
+                if (!empty($feeds)) {
+                    echo '<td>' . $this->render_form_registration_stats($registration_stats) . '</td>';
+                } else {
+                    echo '<td>—</td>';
+                }
+
                 if (empty($feeds)) {
-                    echo '<td><span class="pwe-qr-status none">Brak feedu pwe_qr</span></td>';
+                    echo '<td><span class="pwe-qr-status none">Brak feedu QR</span></td>';
                     echo '<td>—</td><td>—</td>';
                     echo '</tr>';
                     continue;
@@ -301,11 +406,12 @@ class PWE_QR_Audit_Tool {
                     $feed_name = $this->get_feed_name($feed);
                     $keys = $this->get_feed_custom_keys($feed);
                     $active = !empty($feed['is_active']);
+                    $system = (string) ($feed['_qr_system'] ?? 'pwe_qr');
 
                     $feed_names[] =
                         '<div class="pwe-qr-feed ' . ($active ? 'is-active' : 'is-inactive') . '">' .
                         '<strong>' . esc_html($feed_name ?: '(bez nazwy)') . '</strong><br>' .
-                        'ID feedu: ' . absint($feed['id'] ?? 0) . ' · ' .
+                        '<code>' . esc_html($system) . '</code> · ID feedu: ' . absint($feed['id'] ?? 0) . ' · ' .
                         ($active ? 'Aktywny' : 'Nieaktywny') .
                         '</div>';
 
@@ -322,6 +428,143 @@ class PWE_QR_Audit_Tool {
 
         echo '</tbody></table></div>';
         echo '</div>';
+    }
+
+    /**
+     * Count registration states for one form.
+     *
+     * @param int   $form_id Gravity Forms form ID.
+     * @param array $feeds   PWE QR feeds assigned to the form.
+     *
+     * @return array
+     */
+    private function get_form_registration_stats($form_id, $feeds) {
+        global $wpdb;
+
+        $stats = [
+            'ok'                   => 0,
+            'bad'                  => 0,
+            'none'                 => 0,
+            'notification_none'    => 0,
+            'notification_missing' => 0,
+            'notification_error'   => 0,
+            'resend'               => 0,
+        ];
+
+        $form_id = absint($form_id);
+
+        if (!$form_id) {
+            return $stats;
+        }
+
+        $form = GFAPI::get_form($form_id);
+        $has_active_notifications = (
+            !is_wp_error($form) &&
+            is_array($form) &&
+            $this->form_has_active_notifications($form)
+        );
+
+        [$entry_table, $meta_table] = $this->get_table_names();
+
+        $sql = $wpdb->prepare(
+            "SELECT e.id,
+                    qm.meta_value AS pwe_qr_code_url,
+                    (
+                        SELECT oqm.meta_value
+                        FROM {$meta_table} oqm
+                        WHERE oqm.entry_id = e.id
+                          AND oqm.meta_key LIKE 'qr-code_feed_%_url'
+                        ORDER BY oqm.id DESC
+                        LIMIT 1
+                    ) AS legacy_qr_code_url,
+                    rqm.meta_value AS pwe_qr_resend_code_url
+             FROM {$entry_table} e
+             LEFT JOIN {$meta_table} qm
+               ON qm.entry_id = e.id
+              AND qm.meta_key = 'pwe_qr_code_url'
+             LEFT JOIN {$meta_table} rqm
+               ON rqm.entry_id = e.id
+              AND rqm.meta_key = 'pwe_qr_resend_code_url'
+             WHERE e.form_id = %d
+               AND e.status = 'active'
+             ORDER BY e.id DESC",
+            $form_id
+        );
+
+        $rows = (array) $wpdb->get_results($sql, ARRAY_A);
+
+        foreach ($rows as $row) {
+            $entry_id = absint($row['id'] ?? 0);
+
+            if (!$entry_id) {
+                continue;
+            }
+
+            $saved_qr_url = (string) ($row['pwe_qr_code_url'] ?? '');
+
+            if ($saved_qr_url === '') {
+                $saved_qr_url = (string) ($row['legacy_qr_code_url'] ?? '');
+            }
+
+            $saved_value = $this->extract_qr_value($saved_qr_url);
+
+            if ($saved_value === '') {
+                $saved_value = $this->get_legacy_derived_qr_value($entry_id, $feeds);
+            }
+
+            $comparison = $this->compare_entry_qr_light($form_id, $entry_id, $feeds, $saved_value);
+
+            $resend_success = (string) gform_get_meta($entry_id, 'pwe_qr_resend_success');
+            $has_resend = ($resend_success === '1' || !empty($row['pwe_qr_resend_code_url']));
+            $has_sent_notification = $this->has_sent_notification($entry_id);
+            $has_notification_error = $this->has_notification_error($entry_id);
+
+            if (!$has_sent_notification && !$has_resend) {
+                if ($has_notification_error) {
+                    $stats['notification_error']++;
+                } elseif (!$has_active_notifications) {
+                    $stats['notification_none']++;
+                } else {
+                    $stats['notification_missing']++;
+                }
+                continue;
+            }
+
+            if (isset($stats[$comparison])) {
+                $stats[$comparison]++;
+            }
+
+            if ($has_resend) {
+                $stats['resend']++;
+            }
+        }
+
+        return $stats;
+    }
+
+    /**
+     * Render compact stats as: zgodne / rozbieżne / brak danych / resendy.
+     *
+     * @param array $stats Registration statistics.
+     *
+     * @return string
+     */
+    private function render_form_registration_stats($stats) {
+        return '<span class="pwe-qr-form-stats" title="Zgodne / Rozbieżne / Brak danych / Brak powiadomień / Nie wysłane / Błędy / Resendy">' .
+            '<span class="ok">' . number_format_i18n((int) ($stats['ok'] ?? 0)) . '</span>' .
+            '<span class="sep">/</span>' .
+            '<span class="bad">' . number_format_i18n((int) ($stats['bad'] ?? 0)) . '</span>' .
+            '<span class="sep">/</span>' .
+            '<span class="none">' . number_format_i18n((int) ($stats['none'] ?? 0)) . '</span>' .
+            '<span class="sep">/</span>' .
+            '<span class="notification-none">' . number_format_i18n((int) ($stats['notification_none'] ?? 0)) . '</span>' .
+            '<span class="sep">/</span>' .
+            '<span class="notification-missing">' . number_format_i18n((int) ($stats['notification_missing'] ?? 0)) . '</span>' .
+            '<span class="sep">/</span>' .
+            '<span class="notification-error">' . number_format_i18n((int) ($stats['notification_error'] ?? 0)) . '</span>' .
+            '<span class="sep">/</span>' .
+            '<span class="resend">' . number_format_i18n((int) ($stats['resend'] ?? 0)) . '</span>' .
+            '</span>';
     }
 
     private function render_entries_table($forms) {
@@ -352,31 +595,59 @@ class PWE_QR_Audit_Tool {
 
         $search = isset($_GET['audit_search']) ? sanitize_text_field(wp_unslash($_GET['audit_search'])) : '';
         $status_filter = isset($_GET['audit_status']) ? sanitize_key(wp_unslash($_GET['audit_status'])) : '';
+        $notification_filter = isset($_GET['audit_notification']) ? sanitize_key(wp_unslash($_GET['audit_notification'])) : '';
 
         if (!in_array($status_filter, ['', 'ok', 'bad', 'none'], true)) {
             $status_filter = '';
         }
 
+        if (!in_array($notification_filter, ['', 'none_configured', 'sent', 'missing', 'error', 'resend'], true)) {
+            $notification_filter = '';
+        }
+
+        $per_page = isset($_GET['audit_per_page']) ? absint($_GET['audit_per_page']) : 100;
+
+        if (!in_array($per_page, [100, 200, 300, 500], true)) {
+            $per_page = 100;
+        }
+
+        $this->per_page = $per_page;
+
         $page = max(1, isset($_GET['audit_paged']) ? absint($_GET['audit_paged']) : 1);
 
-        $data = $this->get_entries_page(array_keys($active_forms), $selected_form_id, $search, $status_filter, $page);
+        $data = $this->get_entries_page(
+            array_keys($active_forms),
+            $selected_form_id,
+            $search,
+            $status_filter,
+            $notification_filter,
+            $page
+        );
 
         echo '<div class="pwe-qr-section">';
         echo '<h2>Rejestracje i zapisane kody QR</h2>';
-        echo '<p>Pokazywane są aktywne wpisy tylko z formularzy, które mają feed PWE QR. Tabela jest stronicowana po ' . absint($this->per_page) . ' wpisów.</p>';
+        echo '<p>Pokazywane są aktywne wpisy tylko z formularzy, które mają feed pwe_qr lub qr-code. Tabela jest stronicowana po ' . absint($this->per_page) . ' wpisów.</p>';
 
-        $this->render_filters($active_forms, $selected_form_id, $search, $status_filter);
+        $this->render_filters($active_forms, $selected_form_id, $search, $status_filter, $notification_filter, $per_page);
         $this->render_export_button($selected_form_id, $search);
 
         echo '<div class="pwe-qr-summary">';
-        echo '<span class="pwe-qr-summary-item">Znaleziono wpisów: ' . number_format_i18n($data['all_total']) . '</span>';
+        echo '<span class="pwe-qr-summary-item">Znaleziono wpisów: ' . number_format_i18n($data['total']) . '</span>';
         echo '<span class="pwe-qr-summary-item ok">Zgodne: ' . number_format_i18n($data['counts']['ok']) . '</span>';
         echo '<span class="pwe-qr-summary-item bad">Rozbieżne: ' . number_format_i18n($data['counts']['bad']) . '</span>';
         echo '<span class="pwe-qr-summary-item none">Brak danych: ' . number_format_i18n($data['counts']['none']) . '</span>';
+        echo '<span class="pwe-qr-summary-item notification-none">Brak powiadomień: ' . number_format_i18n($data['counts']['notification_none']) . '</span>';
+        echo '<span class="pwe-qr-summary-item notification-missing">Nie wysłane: ' . number_format_i18n($data['counts']['notification_missing']) . '</span>';
+        echo '<span class="pwe-qr-summary-item notification-error">Błędy: ' . number_format_i18n($data['counts']['notification_error']) . '</span>';
         echo '<span class="pwe-qr-summary-item resend">Resendy: ' . number_format_i18n($data['counts']['resend']) . '</span>';
         echo '</div>';
 
-        $this->render_resend_tools();
+        $this->render_resend_tools(
+            $selected_form_id,
+            $status_filter,
+            $notification_filter,
+            $search
+        );
 
         echo '<div class="pwe-qr-table-wrap">';
         echo '<table class="widefat striped">';
@@ -419,26 +690,56 @@ class PWE_QR_Audit_Tool {
                 }
 
                 $email = $this->get_entry_email($entry, $email_fields_cache[$form_id]);
-                $qr_url = (string) gform_get_meta($entry_id, 'pwe_qr_code_url');
-                $qr_value = $this->extract_qr_value($qr_url);
+                $saved_qr = $this->get_entry_saved_qr($entry_id, $feeds_cache[$form_id]);
+                $qr_url = (string) ($saved_qr['url'] ?? '');
+                $qr_value = (string) ($saved_qr['value'] ?? '');
+
+                if ($qr_value === '' && $qr_url !== '') {
+                    $qr_value = $this->extract_qr_value($qr_url);
+                }
                 $resend_qr_url = (string) gform_get_meta($entry_id, 'pwe_qr_resend_code_url');
                 $resend_qr_value = $this->extract_qr_value($resend_qr_url);
+                $resend_sent_at = (string) gform_get_meta($entry_id, 'pwe_qr_resend_sent_at');
+                $resend_success = (string) gform_get_meta($entry_id, 'pwe_qr_resend_success');
+                $resend_notification_names = gform_get_meta($entry_id, 'pwe_qr_resend_notification_names');
+
+                if (!is_array($resend_notification_names)) {
+                    $resend_notification_names = [];
+                }
+
+                $has_sent_notification = $this->has_sent_notification($entry_id);
+                $has_notification_error = $this->has_notification_error($entry_id);
+                $has_active_notifications = $this->form_has_active_notifications($forms_cache[$form_id]);
+                $notification_error_message = $has_notification_error
+                    ? $this->get_notification_error_message($entry_id)
+                    : '';
                 $comparison = isset($entry_row['comparison']) ? $entry_row['comparison'] : $this->compare_entry_qr($form_id, $entry, $feeds_cache[$form_id], $qr_value);
                 $notification_match = $this->get_notification_for_entry($forms_cache[$form_id], $entry, $email);
 
-                $can_resend = (
-                    $comparison === 'bad' &&
-                    !empty($notification_match['id']) &&
-                    empty($notification_match['ambiguous'])
+                $resend_notifications = $this->get_resend_notifications_for_entry(
+                    $forms_cache[$form_id],
+                    $entry,
+                    $comparison
                 );
+
+                $can_resend_auto = !empty($resend_notifications);
 
                 echo '<tr>';
                 echo '<td class="pwe-qr-bulk-check">';
-                if ($can_resend) {
-                    echo '<input type="checkbox" class="pwe-qr-resend-entry" value="' . esc_attr($entry_id . '|' . $notification_match['id']) . '" aria-label="Zaznacz wpis ' . esc_attr($entry_id) . '">';
+
+                if ($can_resend_auto) {
+                    $notification_ids = array_values(array_filter(array_map(
+                        static function($notification) {
+                            return (string) ($notification['id'] ?? '');
+                        },
+                        $resend_notifications
+                    )));
+
+                    echo '<input type="checkbox" class="pwe-qr-resend-entry" data-entry-id="' . esc_attr($entry_id) . '" data-notification-ids="' . esc_attr(wp_json_encode($notification_ids)) . '" data-manual="1" aria-label="Zaznacz wpis ' . esc_attr($entry_id) . '">';
                 } else {
                     echo '—';
                 }
+
                 echo '</td>';
                 echo '<td><strong>' . esc_html($forms_cache[$form_id]['title'] ?? ('Formularz ' . $form_id)) . '</strong><br>ID ' . esc_html($form_id) . '</td>';
                 echo '<td><a href="' . esc_url(admin_url('admin.php?page=gf_entries&view=entry&id=' . $form_id . '&lid=' . $entry_id)) . '"><strong>' . esc_html($entry_id) . '</strong></a></td>';
@@ -446,12 +747,50 @@ class PWE_QR_Audit_Tool {
                 echo '<td>' . ($email !== '' ? esc_html($email) : '—') . '</td>';
                 echo '<td>' . $this->render_feeds_for_entry($feeds_cache[$form_id]) . '</td>';
                 echo '<td>' . $this->render_saved_qr_history($qr_url, $qr_value, $resend_qr_url, $resend_qr_value) . '</td>';
-                echo '<td>' . $this->render_notification_match($notification_match) . '</td>';
                 echo '<td>';
-                echo $this->render_comparison_status($comparison);
 
-                if ($resend_qr_url !== '') {
-                    echo '<br><span class="pwe-qr-status resend">Resend wysłany</span>';
+                if ($has_notification_error && !$has_sent_notification) {
+                    echo '<div class="pwe-qr-notification-error-column">';
+                    echo '<strong>Błąd wysyłki</strong>';
+
+                    if ($notification_error_message !== '') {
+                        echo '<small>' . esc_html($notification_error_message) . '</small>';
+                    }
+
+                    echo '</div>';
+                } elseif (!$has_sent_notification && !$has_active_notifications) {
+                    echo '<span class="pwe-qr-status notification-none">Brak aktywnych powiadomień w formularzu</span>';
+                } else {
+                    echo $this->render_notification_column(
+                        $notification_match,
+                        $resend_notification_names
+                    );
+                }
+
+                echo '</td>';
+                echo '<td>';
+
+                $has_confirmed_resend = (
+                    $resend_success === '1' ||
+                    $resend_qr_url !== ''
+                );
+
+                if (!$has_sent_notification && !$has_confirmed_resend) {
+                    // No message ever reached the outgoing mail path, so the client did
+                    // not receive a QR. Do not call the stored QR "Zgodny" or "Rozbieżny".
+                    if ($has_notification_error) {
+                        echo '<span class="pwe-qr-status notification-error">Błąd wysyłki</span>';
+                    } elseif (!$has_active_notifications) {
+                        echo '<span class="pwe-qr-status notification-none">Brak powiadomień</span>';
+                    } else {
+                        echo '<span class="pwe-qr-status notification-missing">Nie wysłane</span>';
+                    }
+                } else {
+                    echo $this->render_comparison_status($comparison);
+
+                    if ($has_confirmed_resend) {
+                        echo '<br><span class="pwe-qr-status resend">Resend wysłany</span>';
+                    }
                 }
 
                 echo '</td>';
@@ -461,19 +800,47 @@ class PWE_QR_Audit_Tool {
 
         echo '</tbody></table></div>';
 
-        $this->render_pagination($data['total'], $page, $selected_form_id, $search, $status_filter);
+        $this->render_pagination(
+            $data['total'],
+            $page,
+            $selected_form_id,
+            $search,
+            $status_filter,
+            $notification_filter,
+            $per_page
+        );
 
         echo '</div>';
     }
 
-    private function render_resend_tools() {
+    private function render_resend_tools(
+        $selected_form_id = 0,
+        $status_filter = '',
+        $notification_filter = '',
+        $search = ''
+    ) {
         $nonce = wp_create_nonce('pwe_qr_resend_notifications');
+        $bulk_nonce = wp_create_nonce('pwe_qr_bulk_language_preview');
 
         echo '<div class="pwe-qr-resend-tools">';
         echo '<button type="button" class="button button-primary" id="pwe-qr-resend-selected" disabled>Wyślij ponownie zaznaczone powiadomienia</button>';
-        echo '<span class="description">Dostępne tylko dla rozbieżnych wpisów, dla których można jednoznacznie ustalić powiadomienie wysyłane do adresu rejestrującego.</span>';
+        echo '<span class="description">Powiadomienia do resendu są dobierane automatycznie. Dla wpisów bez historii język wynika ze źródłowego URL.</span>';
         echo '<span class="pwe-qr-resend-result" id="pwe-qr-resend-result"></span>';
         echo '</div>';
+
+        if ($selected_form_id) {
+            echo '<div class="pwe-qr-bulk-language">';
+            echo '<h3>Masowa wysyłka powiadomień</h3>';
+            echo '<p>Uwzględnia aktualnie wybrany formularz i filtry. Obsługuje m.in. <strong>Błąd wysyłki</strong>, <strong>Nie wysłane</strong> oraz wpisy wymagające resendu QR. Przed wysyłką zobaczysz dokładny plan powiadomień.</p>';
+            echo '<button type="button" class="button button-secondary" id="pwe-qr-bulk-language-preview" ' .
+                'data-form-id="' . absint($selected_form_id) . '" ' .
+                'data-status-filter="' . esc_attr($status_filter) . '" ' .
+                'data-notification-filter="' . esc_attr($notification_filter) . '" ' .
+                'data-search="' . esc_attr($search) . '">' .
+                'Przygotuj masową wysyłkę</button>';
+            echo '<div id="pwe-qr-bulk-language-result" style="margin-top:12px;"></div>';
+            echo '</div>';
+        }
 
         echo '<script>
         jQuery(function($) {
@@ -481,16 +848,28 @@ class PWE_QR_Audit_Tool {
             const $button = $("#pwe-qr-resend-selected");
             const $result = $("#pwe-qr-resend-result");
             const nonce = ' . wp_json_encode($nonce) . ';
+            const bulkNonce = ' . wp_json_encode($bulk_nonce) . ';
+            let bulkEntries = [];
 
             function selectedItems() {
                 return $(".pwe-qr-resend-entry:checked").map(function() {
-                    const parts = String(this.value).split("|");
+                    const $checkbox = $(this);
+
+                    let notificationIds = [];
+
+                    try {
+                        notificationIds = JSON.parse(String($checkbox.attr("data-notification-ids") || "[]"));
+                    } catch (e) {
+                        notificationIds = [];
+                    }
+
                     return {
-                        entry_id: parseInt(parts[0], 10) || 0,
-                        notification_id: parts.slice(1).join("|")
+                        entry_id: parseInt($checkbox.data("entry-id"), 10) || 0,
+                        notification_ids: Array.isArray(notificationIds) ? notificationIds : [],
+                        manual: String($checkbox.attr("data-manual") || "0") === "1" ? 1 : 0
                     };
                 }).get().filter(function(item) {
-                    return item.entry_id > 0 && item.notification_id;
+                    return item.entry_id > 0 && item.notification_ids.length > 0;
                 });
             }
 
@@ -498,10 +877,65 @@ class PWE_QR_Audit_Tool {
                 $button.prop("disabled", selectedItems().length === 0);
             }
 
+            function sendQueue(items, $status, doneCallback) {
+                let queue = items.slice();
+                let sent = 0;
+                let failed = 0;
+                let errors = [];
+
+                function runNextBatch() {
+                    if (!queue.length) {
+                        let resultText = "Zakończono. Wysłano: " + sent + ", błędy: " + failed + ".";
+
+                        if (errors.length) {
+                            resultText += " " + errors.slice(0, 5).join(" | ");
+                            if (errors.length > 5) {
+                                resultText += " | +" + (errors.length - 5) + " kolejnych błędów";
+                            }
+                        }
+
+                        $status.text(resultText);
+
+                        if (typeof doneCallback === "function") {
+                            doneCallback();
+                        }
+
+                        return;
+                    }
+
+                    const batch = queue.splice(0, 10);
+                    $status.text("Wysyłanie… " + sent + " / " + items.length);
+
+                    $.post(ajaxurl, {
+                        action: "pwe_qr_resend_notifications",
+                        nonce: nonce,
+                        items: JSON.stringify(batch)
+                    }).done(function(response) {
+                        if (response && response.success && response.data) {
+                            sent += parseInt(response.data.sent || 0, 10);
+                            failed += parseInt(response.data.failed || 0, 10);
+
+                            if (Array.isArray(response.data.errors) && response.data.errors.length) {
+                                errors = errors.concat(response.data.errors);
+                            }
+                        } else {
+                            failed += batch.length;
+                        }
+                    }).fail(function() {
+                        failed += batch.length;
+                    }).always(function() {
+                        runNextBatch();
+                    });
+                }
+
+                runNextBatch();
+            }
+
             $selectAll.on("change", function() {
-                $(".pwe-qr-resend-entry").prop("checked", this.checked);
+                $(".pwe-qr-resend-entry:not(:disabled)").prop("checked", this.checked);
                 updateButton();
             });
+
 
             $(document).on("change", ".pwe-qr-resend-entry", function() {
                 const total = $(".pwe-qr-resend-entry").length;
@@ -526,62 +960,385 @@ class PWE_QR_Audit_Tool {
                 $selectAll.prop("disabled", true);
                 $(".pwe-qr-resend-entry").prop("disabled", true);
 
-                let queue = items.slice();
-                let sent = 0;
-                let failed = 0;
+                sendQueue(items, $result, function() {
+                    $(".pwe-qr-resend-entry").prop("disabled", false);
+                    $selectAll.prop("disabled", false);
+                    updateButton();
+                });
+            });
 
-                function runNextBatch() {
-                    if (!queue.length) {
-                        const errors = $result.data("pweQrErrors") || [];
-                        let resultText = "Zakończono. Wysłano: " + sent + ", błędy: " + failed + ".";
+            function renderBulkPlan(data) {
+                const $target = $("#pwe-qr-bulk-language-result");
+                bulkEntries = Array.isArray(data.entries) ? data.entries : [];
+                const groups = Array.isArray(data.groups) ? data.groups : [];
 
-                        if (errors.length) {
-                            resultText += " " + errors.slice(0, 5).join(" | ");
-                            if (errors.length > 5) {
-                                resultText += " | +" + (errors.length - 5) + " kolejnych błędów";
-                            }
-                        }
-
-                        $result.text(resultText);
-                        $result.removeData("pweQrErrors");
-                        $(".pwe-qr-resend-entry").prop("disabled", false);
-                        $selectAll.prop("disabled", false);
-                        updateButton();
-                        return;
-                    }
-
-                    const batch = queue.splice(0, 10);
-                    $result.text("Wysyłanie… " + sent + " / " + items.length);
-
-                    $.post(ajaxurl, {
-                        action: "pwe_qr_resend_notifications",
-                        nonce: nonce,
-                        items: JSON.stringify(batch)
-                    }).done(function(response) {
-                        if (response && response.success && response.data) {
-                            sent += parseInt(response.data.sent || 0, 10);
-                            failed += parseInt(response.data.failed || 0, 10);
-
-                            if (Array.isArray(response.data.errors) && response.data.errors.length) {
-                                const previousErrors = $result.data("pweQrErrors") || [];
-                                $result.data("pweQrErrors", previousErrors.concat(response.data.errors));
-                            }
-                        } else {
-                            failed += batch.length;
-                        }
-                    }).fail(function() {
-                        failed += batch.length;
-                    }).always(function() {
-                        runNextBatch();
-                    });
+                if (!bulkEntries.length) {
+                    $target.html("<p><strong>Brak wpisów możliwych do ponownej wysyłki dla aktualnych filtrów.</strong></p>");
+                    return;
                 }
 
-                runNextBatch();
+                let html = "<div class=\"pwe-qr-bulk-plan\"><p><strong>Do wysyłki: " + bulkEntries.length + " wpisów.</strong></p>";
+                html += "<table class=\"widefat striped\" style=\"max-width:900px; min-width:0;\"><thead><tr><th>Wpisy</th><th>Powiadomienia, które zostaną wysłane</th></tr></thead><tbody>";
+
+                groups.forEach(function(group) {
+                    const notifications = Array.isArray(group.notifications) ? group.notifications : [];
+
+                    html += "<tr><td><strong>" + parseInt(group.count || 0, 10) + "</strong></td><td>";
+                    html += notifications.length
+                        ? notifications.map(function(name) {
+                            return $("<div>").text(name).html();
+                        }).join("<br>")
+                        : "<span style=\"color:#b32d2e;\">Brak powiadomienia</span>";
+                    html += "</td></tr>";
+                });
+
+                html += "</tbody></table>";
+                html += "<div id=\"pwe-qr-bulk-plan-summary\" style=\"margin-top:12px;\"></div>";
+                html += "<button type=\"button\" class=\"button button-primary\" id=\"pwe-qr-bulk-language-send\">Wyślij masowo</button> ";
+                html += "<span id=\"pwe-qr-bulk-language-send-status\"></span>";
+                html += "</div>";
+
+                $target.html(html);
+
+                const lines = groups.map(function(group) {
+                    const names = Array.isArray(group.notifications)
+                        ? group.notifications.join(" + ")
+                        : "";
+
+                    return "<strong>" + parseInt(group.count || 0, 10) + " wpisów:</strong> " +
+                        $("<div>").text(names).html();
+                });
+
+                $("#pwe-qr-bulk-plan-summary").html(
+                    "<p><strong>Plan wysyłki:</strong><br>" + lines.join("<br>") + "</p>"
+                );
+            }
+
+            $("#pwe-qr-bulk-language-preview").on("click", function() {
+                const $previewButton = $(this);
+                const formId = parseInt($previewButton.data("form-id"), 10) || 0;
+                const $target = $("#pwe-qr-bulk-language-result");
+
+                if (!formId) {
+                    return;
+                }
+
+                $previewButton.prop("disabled", true);
+                $target.text("Analizuję wpisy i języki…");
+
+                $.post(ajaxurl, {
+                    action: "pwe_qr_bulk_language_preview",
+                    nonce: bulkNonce,
+                    form_id: formId,
+                    status_filter: String($previewButton.data("status-filter") || ""),
+                    notification_filter: String($previewButton.data("notification-filter") || ""),
+                    search: String($previewButton.data("search") || "")
+                }).done(function(response) {
+                    if (response && response.success && response.data) {
+                        renderBulkPlan(response.data);
+                    } else {
+                        $target.text("Nie udało się przygotować planu wysyłki.");
+                    }
+                }).fail(function() {
+                    $target.text("Nie udało się przygotować planu wysyłki.");
+                }).always(function() {
+                    $previewButton.prop("disabled", false);
+                });
+            });
+
+            $(document).on("click", "#pwe-qr-bulk-language-send", function() {
+                const $sendButton = $(this);
+                const $status = $("#pwe-qr-bulk-language-send-status");
+                const grouped = {};
+
+                const items = bulkEntries.map(function(entry) {
+                    const ids = Array.isArray(entry.notification_ids)
+                        ? entry.notification_ids.map(String).filter(Boolean)
+                        : [];
+
+                    const names = Array.isArray(entry.notifications)
+                        ? entry.notifications.map(String).filter(Boolean)
+                        : [];
+
+                    const groupKey = ids.slice().sort().join("|");
+
+                    if (!grouped[groupKey]) {
+                        grouped[groupKey] = {
+                            count: 0,
+                            name: names.join(" + ")
+                        };
+                    }
+
+                    grouped[groupKey].count++;
+
+                    return {
+                        entry_id: parseInt(entry.entry_id, 10) || 0,
+                        notification_ids: ids,
+                        manual: 1
+                    };
+                }).filter(function(item) {
+                    return item.entry_id > 0 && item.notification_ids.length > 0;
+                });
+
+                if (!items.length || items.length !== bulkEntries.length) {
+                    return;
+                }
+
+                const planLines = Object.keys(grouped).map(function(key) {
+                    return grouped[key].count + " × " + grouped[key].name;
+                });
+
+                const confirmText = "Zostaną obsłużone " + items.length + " wpisy.\\n\\n" +
+                    planLines.join("\\n") +
+                    "\\n\\nKontynuować?";
+
+                if (!window.confirm(confirmText)) {
+                    return;
+                }
+
+                $sendButton.prop("disabled", true);
+
+                sendQueue(items, $status, function() {
+                    $sendButton.prop("disabled", false);
+                });
             });
 
             updateButton();
         });
         </script>';
+    }
+
+    public function ajax_bulk_language_preview() {
+        if (!current_user_can('manage_options')) {
+            wp_send_json_error(['message' => 'Brak uprawnień.'], 403);
+        }
+
+        check_ajax_referer('pwe_qr_bulk_language_preview', 'nonce');
+
+        if (!class_exists('GFAPI')) {
+            wp_send_json_error(['message' => 'Gravity Forms nie jest dostępne.'], 500);
+        }
+
+        $form_id = absint($_POST['form_id'] ?? 0);
+        $status_filter = sanitize_key((string) ($_POST['status_filter'] ?? ''));
+        $notification_filter = sanitize_key((string) ($_POST['notification_filter'] ?? ''));
+        $search = sanitize_text_field((string) ($_POST['search'] ?? ''));
+
+        if (!$form_id) {
+            wp_send_json_error(['message' => 'Brak formularza.'], 400);
+        }
+
+        if (!in_array($status_filter, ['', 'ok', 'bad', 'none'], true)) {
+            $status_filter = '';
+        }
+
+        if (!in_array($notification_filter, ['', 'none_configured', 'sent', 'missing', 'error', 'resend'], true)) {
+            $notification_filter = '';
+        }
+
+        $form = GFAPI::get_form($form_id);
+
+        if (!$form || is_wp_error($form)) {
+            wp_send_json_error(['message' => 'Nie znaleziono formularza.'], 404);
+        }
+
+        $feeds = $this->get_pwe_feeds($form_id);
+        $email_fields = $this->get_email_field_ids($form);
+        $entries_to_send = [];
+        $groups = [];
+
+        $paging = [
+            'offset'    => 0,
+            'page_size' => 200,
+        ];
+
+        do {
+            $entries = GFAPI::get_entries(
+                $form_id,
+                ['status' => 'active'],
+                null,
+                $paging
+            );
+
+            if (is_wp_error($entries)) {
+                wp_send_json_error(['message' => $entries->get_error_message()], 500);
+            }
+
+            foreach ($entries as $entry) {
+                $entry_id = absint($entry['id'] ?? 0);
+
+                if (!$entry_id) {
+                    continue;
+                }
+
+                $email = $this->get_entry_email($entry, $email_fields);
+
+                if ($search !== '') {
+                    $haystack = $entry_id . ' ' . $email . ' ' . implode(' ', array_map(
+                        static function($value) {
+                            return is_scalar($value) ? (string) $value : '';
+                        },
+                        $entry
+                    ));
+
+                    if (stripos($haystack, $search) === false) {
+                        continue;
+                    }
+                }
+
+                $saved_qr = $this->get_entry_saved_qr($entry_id, $feeds);
+                $saved_value = (string) ($saved_qr['value'] ?? '');
+
+                if ($saved_value === '') {
+                    $saved_value = $this->extract_qr_value((string) ($saved_qr['url'] ?? ''));
+                }
+
+                if ($saved_value === '') {
+                    $saved_value = $this->get_legacy_derived_qr_value($entry_id, $feeds);
+                }
+
+                $comparison = $this->compare_entry_qr_light(
+                    $form_id,
+                    $entry_id,
+                    $feeds,
+                    $saved_value
+                );
+
+                $has_resend = (
+                    (string) gform_get_meta($entry_id, 'pwe_qr_resend_success') === '1' ||
+                    (string) gform_get_meta($entry_id, 'pwe_qr_resend_code_url') !== ''
+                );
+                $has_sent = $this->has_sent_notification($entry_id);
+                $has_error = $this->has_notification_error($entry_id);
+                $has_active_notifications = $this->form_has_active_notifications($form);
+
+                $notification_status = $has_resend
+                    ? 'resend'
+                    : ($has_sent ? 'sent' : ($has_error ? 'error' : ($has_active_notifications ? 'missing' : 'none_configured')));
+
+                $effective_comparison = (!$has_sent && !$has_resend)
+                    ? 'unsent'
+                    : $comparison;
+
+                if ($status_filter !== '' && $effective_comparison !== $status_filter) {
+                    continue;
+                }
+
+                if (
+                    $notification_filter !== '' &&
+                    $notification_status !== $notification_filter
+                ) {
+                    continue;
+                }
+
+                $notifications_for_resend = $this->get_resend_notifications_for_entry(
+                    $form,
+                    $entry,
+                    $comparison
+                );
+
+                if (empty($notifications_for_resend)) {
+                    continue;
+                }
+
+                $notification_ids = array_values(array_filter(array_map(
+                    static function($notification) {
+                        return (string) ($notification['id'] ?? '');
+                    },
+                    $notifications_for_resend
+                )));
+
+                $notification_names = array_values(array_filter(array_map(
+                    static function($notification) {
+                        return (string) ($notification['name'] ?? '');
+                    },
+                    $notifications_for_resend
+                )));
+
+                if (empty($notification_ids)) {
+                    continue;
+                }
+
+                sort($notification_ids);
+                $group_key = implode('|', $notification_ids);
+
+                if (!isset($groups[$group_key])) {
+                    $groups[$group_key] = [
+                        'count'         => 0,
+                        'notifications' => $notification_names,
+                    ];
+                }
+
+                $groups[$group_key]['count']++;
+
+                $entries_to_send[] = [
+                    'entry_id'        => $entry_id,
+                    'notification_ids' => $notification_ids,
+                    'notifications'   => $notification_names,
+                    'status'          => $notification_status,
+                ];
+            }
+
+            $paging['offset'] += $paging['page_size'];
+        } while (count($entries) === $paging['page_size']);
+
+        wp_send_json_success([
+            'entries' => $entries_to_send,
+            'groups'  => array_values($groups),
+        ]);
+    }
+
+    private function detect_language_from_source_url($source_url) {
+        $source_url = trim((string) $source_url);
+
+        if ($source_url === '') {
+            return 'PL';
+        }
+
+        $path = (string) wp_parse_url($source_url, PHP_URL_PATH);
+        $path = '/' . ltrim(strtolower($path), '/');
+
+        if (preg_match('#^/(en|de|cs)(?:/|$)#i', $path, $match)) {
+            return strtoupper($match[1]);
+        }
+
+        return 'PL';
+    }
+
+    private function get_active_notifications_by_language($form) {
+        $result = [
+            'PL' => [],
+            'EN' => [],
+            'DE' => [],
+            'CS' => [],
+        ];
+
+        $notifications = $form['notifications'] ?? [];
+
+        if (!is_array($notifications)) {
+            return $result;
+        }
+
+        foreach ($notifications as $notification_id => $notification) {
+            if (empty($notification['isActive'])) {
+                continue;
+            }
+
+            $name = trim((string) ($notification['name'] ?? ''));
+
+            if (!preg_match('/(?:-|–|—)\s*(PL|EN|DE|CS)\s*$/iu', $name, $match)) {
+                continue;
+            }
+
+            $lang = strtoupper($match[1]);
+
+            $result[$lang][] = [
+                'id'   => (string) $notification_id,
+                'name' => $name !== '' ? $name : ('Powiadomienie ' . $notification_id),
+            ];
+        }
+
+        return $result;
     }
 
     public function ajax_resend_notifications() {
@@ -611,9 +1368,21 @@ class PWE_QR_Audit_Tool {
 
         foreach ($items as $item) {
             $entry_id = absint($item['entry_id'] ?? 0);
-            $notification_id = sanitize_text_field((string) ($item['notification_id'] ?? ''));
+            $notification_ids = $item['notification_ids'] ?? [];
+            $manual_selection = !empty($item['manual']);
 
-            if (!$entry_id || $notification_id === '') {
+            if (!is_array($notification_ids)) {
+                $notification_ids = [];
+            }
+
+            $notification_ids = array_values(array_filter(array_map(
+                static function($notification_id) {
+                    return sanitize_text_field((string) $notification_id);
+                },
+                $notification_ids
+            )));
+
+            if (!$entry_id || empty($notification_ids)) {
                 $failed++;
                 continue;
             }
@@ -639,55 +1408,147 @@ class PWE_QR_Audit_Tool {
             $qr_url = (string) gform_get_meta($entry_id, 'pwe_qr_code_url');
             $saved_value = $this->extract_qr_value($qr_url);
 
-            if ($this->compare_entry_qr_light($form_id, $entry_id, $feeds, $saved_value) !== 'bad') {
-                $failed++;
-                $errors[] = 'Entry ' . $entry_id . ': wpis nie jest już rozbieżny.';
-                continue;
-            }
-
             $email = $this->get_entry_email($entry, $this->get_email_field_ids($form));
             $match = $this->get_notification_for_entry($form, $entry, $email);
-
-            if (
-                empty($match['id']) ||
-                !empty($match['ambiguous']) ||
-                !hash_equals((string) $match['id'], (string) $notification_id)
-            ) {
-                $failed++;
-                $errors[] = 'Entry ' . $entry_id . ': powiadomienie nie jest już jednoznaczne.';
-                continue;
-            }
-
             $notifications = $form['notifications'] ?? [];
-            $notification = $notifications[$notification_id] ?? null;
 
-            if (!$notification || empty($notification['isActive'])) {
-                $failed++;
-                $errors[] = 'Entry ' . $entry_id . ': powiadomienie jest nieaktywne lub nie istnieje.';
-                continue;
+            if (!$manual_selection) {
+                $expected_ids = !empty($match['ids']) && is_array($match['ids'])
+                    ? array_map('strval', $match['ids'])
+                    : [strval($match['id'] ?? '')];
+
+                sort($expected_ids);
+                $requested_ids = array_map('strval', $notification_ids);
+                sort($requested_ids);
+
+                if (
+                    empty($expected_ids) ||
+                    !empty($match['ambiguous']) ||
+                    $expected_ids !== $requested_ids
+                ) {
+                    $failed++;
+                    $errors[] = 'Entry ' . $entry_id . ': zestaw powiadomień nie jest już zgodny.';
+                    continue;
+                }
             }
 
             try {
-                // Preserve the original QR history. A resend may regenerate pwe_qr_code_url
-                // while preparing the email/attachment; that must not erase what the user
-                // received during the first registration.
                 $original_qr_url = (string) gform_get_meta($entry_id, 'pwe_qr_code_url');
                 $original_qr_url_encoded = (string) gform_get_meta($entry_id, 'pwe_qr_code_url_encoded');
 
-                // Build a temporary form copy with only the selected notification active
-                // and use the broadly supported send_notifications() method.
-                $form_for_send = $form;
+                $legacy_original_meta = [];
 
-                foreach (($form_for_send['notifications'] ?? []) as $n_id => $n_data) {
-                    $form_for_send['notifications'][$n_id]['isActive'] = (
-                        (string) $n_id === (string) $notification_id
+                foreach ($feeds as $feed) {
+                    if (($feed['_qr_system'] ?? '') !== 'qr-code') {
+                        continue;
+                    }
+
+                    $feed_id = absint($feed['id'] ?? 0);
+
+                    if (!$feed_id) {
+                        continue;
+                    }
+
+                    $legacy_meta_key = 'qr-code_feed_' . $feed_id . '_url';
+                    $legacy_original_meta[$legacy_meta_key] = (string) gform_get_meta(
+                        $entry_id,
+                        $legacy_meta_key
                     );
                 }
 
-                GFAPI::send_notifications($form_for_send, $entry);
+                gform_delete_meta($entry_id, 'pwe_qr_resend_success');
 
-                // If notification processing generated a fresh/current QR, keep it as
-                // resend history instead of replacing the original QR.
+                $sent_notification_names = [];
+                $sent_recipients = [];
+
+                foreach ($notification_ids as $notification_id) {
+                    $notification = $notifications[$notification_id] ?? null;
+
+                    if (!$notification || empty($notification['isActive'])) {
+                        throw new RuntimeException(
+                            'Powiadomienie ' . $notification_id . ' jest nieaktywne lub nie istnieje.'
+                        );
+                    }
+
+                    $mail_result = [
+                        'called'  => false,
+                        'success' => false,
+                        'to'      => '',
+                        'subject' => '',
+                    ];
+
+                    $after_email_callback = function(
+                        $is_success,
+                        $to,
+                        $subject,
+                        $message,
+                        $headers,
+                        $attachments,
+                        $message_format,
+                        $from,
+                        $from_name,
+                        $bcc,
+                        $reply_to,
+                        $email_entry
+                    ) use (&$mail_result, $entry_id) {
+                        if (absint($email_entry['id'] ?? 0) !== $entry_id) {
+                            return;
+                        }
+
+                        $mail_result['called'] = true;
+                        $mail_result['success'] = (bool) $is_success;
+                        $mail_result['to'] = is_array($to) ? implode(', ', $to) : (string) $to;
+                        $mail_result['subject'] = (string) $subject;
+                    };
+
+                    add_action('gform_after_email', $after_email_callback, 999, 12);
+
+                    try {
+                        if (!class_exists('GFCommon') || !method_exists('GFCommon', 'send_notification')) {
+                            throw new RuntimeException(
+                                'Ta wersja Gravity Forms nie udostępnia GFCommon::send_notification().'
+                            );
+                        }
+
+                        $notification_to_send = $notification;
+                        $notification_to_send['isActive'] = true;
+
+                        if ($manual_selection) {
+                            $notification_to_send['conditionalLogic'] = null;
+                        }
+
+                        GFCommon::send_notification(
+                            $notification_to_send,
+                            $form,
+                            $entry
+                        );
+                    } finally {
+                        remove_action('gform_after_email', $after_email_callback, 999);
+                    }
+
+                    if (!$mail_result['called']) {
+                        throw new RuntimeException(
+                            'Gravity Forms nie uruchomił faktycznej wysyłki e-mail dla "' .
+                            (string) ($notification['name'] ?? $notification_id) .
+                            '".'
+                        );
+                    }
+
+                    if (!$mail_result['success']) {
+                        throw new RuntimeException(
+                            'wp_mail() zwrócił błąd dla "' .
+                            (string) ($notification['name'] ?? $notification_id) .
+                            '".'
+                        );
+                    }
+
+                    $sent_notification_names[] = (string) ($notification['name'] ?? $notification_id);
+
+                    if ($mail_result['to'] !== '') {
+                        $sent_recipients[] = $mail_result['to'];
+                    }
+                }
+
                 $generated_qr_url = (string) gform_get_meta($entry_id, 'pwe_qr_code_url');
                 $generated_qr_url_encoded = (string) gform_get_meta($entry_id, 'pwe_qr_code_url_encoded');
 
@@ -697,11 +1558,33 @@ class PWE_QR_Audit_Tool {
                     if ($generated_qr_url_encoded !== '') {
                         gform_update_meta($entry_id, 'pwe_qr_resend_code_url_encoded', $generated_qr_url_encoded);
                     }
+                } else {
+                    // Legacy qr-code can regenerate its own feed-specific URL.
+                    foreach ($legacy_original_meta as $legacy_meta_key => $legacy_original_url) {
+                        $legacy_generated_url = (string) gform_get_meta(
+                            $entry_id,
+                            $legacy_meta_key
+                        );
 
-                    gform_update_meta($entry_id, 'pwe_qr_resend_sent_at', current_time('mysql'));
+                        if (
+                            $legacy_generated_url !== '' &&
+                            $legacy_generated_url !== $legacy_original_url
+                        ) {
+                            gform_update_meta(
+                                $entry_id,
+                                'pwe_qr_resend_code_url',
+                                $legacy_generated_url
+                            );
+                            break;
+                        }
+                    }
                 }
 
-                // Restore the original registration QR exactly as it was.
+                gform_update_meta($entry_id, 'pwe_qr_resend_success', '1');
+                gform_update_meta($entry_id, 'pwe_qr_resend_sent_at', current_time('mysql'));
+                gform_update_meta($entry_id, 'pwe_qr_resend_notification_ids', $notification_ids);
+                gform_update_meta($entry_id, 'pwe_qr_resend_notification_names', $sent_notification_names);
+
                 if ($original_qr_url !== '') {
                     gform_update_meta($entry_id, 'pwe_qr_code_url', $original_qr_url);
                 } else {
@@ -712,6 +1595,32 @@ class PWE_QR_Audit_Tool {
                     gform_update_meta($entry_id, 'pwe_qr_code_url_encoded', $original_qr_url_encoded);
                 } else {
                     gform_delete_meta($entry_id, 'pwe_qr_code_url_encoded');
+                }
+
+                foreach ($legacy_original_meta as $legacy_meta_key => $legacy_original_url) {
+                    if ($legacy_original_url !== '') {
+                        gform_update_meta($entry_id, $legacy_meta_key, $legacy_original_url);
+                    } else {
+                        gform_delete_meta($entry_id, $legacy_meta_key);
+                    }
+                }
+
+                if (method_exists('GFAPI', 'add_note')) {
+                    $current_user = wp_get_current_user();
+
+                    $note = 'PWE QR: ponownie wysłano powiadomienia: ' .
+                        implode(', ', $sent_notification_names);
+
+                    if (!empty($sent_recipients)) {
+                        $note .= ' | odbiorcy: ' . implode(' ; ', array_unique($sent_recipients));
+                    }
+
+                    GFAPI::add_note(
+                        $entry_id,
+                        absint($current_user->ID ?? 0),
+                        (string) ($current_user->display_name ?? 'PWE QR'),
+                        $note
+                    );
                 }
 
                 $sent++;
@@ -728,6 +1637,60 @@ class PWE_QR_Audit_Tool {
         ]);
     }
 
+    private function add_admin_notifications_to_unsent_match($form, $entry, $match) {
+        $entry_id = absint($entry['id'] ?? 0);
+
+        if (!$entry_id || $this->has_sent_notification($entry_id)) {
+            return $match;
+        }
+
+        if (!empty($match['ambiguous']) || empty($match['id'])) {
+            return $match;
+        }
+
+        $ids = !empty($match['ids']) && is_array($match['ids'])
+            ? array_values(array_map('strval', $match['ids']))
+            : [(string) $match['id']];
+
+        $names = !empty($match['names']) && is_array($match['names'])
+            ? array_values(array_map('strval', $match['names']))
+            : [(string) ($match['name'] ?? '')];
+
+        foreach (($form['notifications'] ?? []) as $notification_id => $notification) {
+            if (empty($notification['isActive'])) {
+                continue;
+            }
+
+            $name = trim((string) ($notification['name'] ?? ''));
+
+            if (stripos($name, 'Admin Notification') === false) {
+                continue;
+            }
+
+            if (!$this->notification_conditional_logic_passes($notification, $form, $entry)) {
+                continue;
+            }
+
+            $notification_id = (string) $notification_id;
+
+            if ($notification_id === '' || in_array($notification_id, $ids, true)) {
+                continue;
+            }
+
+            $ids[] = $notification_id;
+            $names[] = $name !== '' ? $name : ('Powiadomienie ' . $notification_id);
+        }
+
+        $names = array_values(array_filter($names));
+
+        $match['ids'] = $ids;
+        $match['names'] = $names;
+        $match['id'] = $ids[0] ?? '';
+        $match['name'] = implode(' + ', $names);
+
+        return $match;
+    }
+
     private function get_notification_for_entry($form, $entry, $entry_email) {
         $entry_id = absint($entry['id'] ?? 0);
         $notifications = $form['notifications'] ?? [];
@@ -742,12 +1705,14 @@ class PWE_QR_Audit_Tool {
             ];
         }
 
-        // First choice: exact notification ID recorded by this plugin during a real send.
+        // Historical sources can overlap. Merge our own history with Gravity Forms
+        // successful notification notes instead of stopping at the first source.
+        $historical_notifications = [];
+
         $history = $this->get_notification_history($entry_id);
 
         if (!empty($history)) {
-            for ($i = count($history) - 1; $i >= 0; $i--) {
-                $row = $history[$i];
+            foreach ($history as $row) {
                 $notification_id = (string) ($row['id'] ?? '');
 
                 if ($notification_id === '' || !isset($notifications[$notification_id])) {
@@ -762,22 +1727,104 @@ class PWE_QR_Audit_Tool {
 
                 $history_to = trim((string) ($row['to'] ?? ''));
 
-                if ($entry_email !== '' && $history_to !== '' && !$this->email_list_contains($history_to, $entry_email)) {
+                if (
+                    $entry_email !== '' &&
+                    $history_to !== '' &&
+                    !$this->email_list_contains($history_to, $entry_email)
+                ) {
                     continue;
                 }
 
-                return [
-                    'id' => $notification_id,
+                $historical_notifications[$notification_id] = [
+                    'id'   => $notification_id,
                     'name' => (string) ($notification['name'] ?? $row['name'] ?? ''),
-                    'source' => 'history',
-                    'ambiguous' => false,
-                    'candidates' => [],
                 ];
             }
         }
 
+        $gf_note_notifications = $this->get_notifications_from_gf_notes($form, $entry_id);
+
+        foreach ($gf_note_notifications as $notification) {
+            $notification_id = (string) ($notification['id'] ?? '');
+
+            if ($notification_id === '') {
+                continue;
+            }
+
+            $historical_notifications[$notification_id] = [
+                'id'   => $notification_id,
+                'name' => (string) ($notification['name'] ?? ''),
+            ];
+        }
+
+        if (!empty($historical_notifications)) {
+            $historical_notifications = array_values($historical_notifications);
+
+            $ids = array_values(array_filter(array_map(
+                static function($notification) {
+                    return (string) ($notification['id'] ?? '');
+                },
+                $historical_notifications
+            )));
+
+            $names = array_values(array_filter(array_map(
+                static function($notification) {
+                    return (string) ($notification['name'] ?? '');
+                },
+                $historical_notifications
+            )));
+
+            return [
+                'id'         => $ids[0] ?? '',
+                'ids'        => $ids,
+                'name'       => implode(', ', $names),
+                'names'      => $names,
+                'source'     => 'history',
+                'ambiguous'  => false,
+                'candidates' => $names,
+            ];
+        }
+
+        // No historical send was found: determine the language from the entry source URL.
+        $source_url = (string) ($entry['source_url'] ?? '');
+        $source_lang = $this->detect_language_from_source_url($source_url);
+        $language_matches = $this->get_notifications_for_language($form, $source_lang);
+
+        if (!empty($language_matches)) {
+            $ids = array_values(array_filter(array_map(
+                static function($notification) {
+                    return (string) ($notification['id'] ?? '');
+                },
+                $language_matches
+            )));
+
+            $names = array_values(array_filter(array_map(
+                static function($notification) {
+                    return (string) ($notification['name'] ?? '');
+                },
+                $language_matches
+            )));
+
+            return $this->add_admin_notifications_to_unsent_match(
+                $form,
+                $entry,
+                [
+                    'id'               => $ids[0] ?? '',
+                    'ids'              => $ids,
+                    'name'             => implode(' + ', $names),
+                    'names'            => $names,
+                    'source'           => 'source_url',
+                    'lang'             => $source_lang,
+                    'ambiguous'        => false,
+                    'candidates'       => $names,
+                    'multi_send'       => true,
+                ]
+            );
+        }
+
         // Historical entries created before notification logging:
-        // infer the user-facing notification using the current form settings.
+        // fall back to the older recipient/conditional-logic inference only when
+        // no language-based notification could be resolved.
         $candidates = [];
 
         foreach ($notifications as $notification_id => $notification) {
@@ -805,13 +1852,19 @@ class PWE_QR_Audit_Tool {
         if (count($candidates) === 1) {
             $id = (string) array_key_first($candidates);
 
-            return [
-                'id' => $id,
-                'name' => $candidates[$id],
-                'source' => 'inferred',
-                'ambiguous' => false,
-                'candidates' => $candidates,
-            ];
+            return $this->add_admin_notifications_to_unsent_match(
+                $form,
+                $entry,
+                [
+                    'id' => $id,
+                    'ids' => [$id],
+                    'name' => $candidates[$id],
+                    'names' => [$candidates[$id]],
+                    'source' => 'inferred',
+                    'ambiguous' => false,
+                    'candidates' => $candidates,
+                ]
+            );
         }
 
         return [
@@ -839,26 +1892,746 @@ class PWE_QR_Audit_Tool {
         return is_array($decoded) ? $decoded : [];
     }
 
-    private function render_notification_match($match) {
+    private function get_notification_error_message($entry_id) {
+        $entry_id = absint($entry_id);
+
+        if (!$entry_id || !class_exists('GFAPI') || !method_exists('GFAPI', 'get_notes')) {
+            return '';
+        }
+
+        $notes = GFAPI::get_notes([
+            'entry_id'  => $entry_id,
+            'note_type' => 'notification',
+        ]);
+
+        if (!is_array($notes) || empty($notes)) {
+            return '';
+        }
+
+        foreach ($notes as $note) {
+            $values = is_object($note) ? get_object_vars($note) : (array) $note;
+            $sub_type = strtolower(trim((string) ($values['sub_type'] ?? '')));
+            $note_text = '';
+
+            foreach ($values as $key => $value) {
+                if (!is_scalar($value)) {
+                    continue;
+                }
+
+                if (in_array((string) $key, ['value', 'note', 'message'], true)) {
+                    $note_text .= ' ' . (string) $value;
+                }
+            }
+
+            if ($note_text === '') {
+                foreach ($values as $value) {
+                    if (is_scalar($value)) {
+                        $note_text .= ' ' . (string) $value;
+                    }
+                }
+            }
+
+            $note_text = trim(wp_strip_all_tags($note_text));
+
+            $looks_like_error = (
+                in_array($sub_type, ['error', 'failed', 'failure'], true) ||
+                stripos($note_text, 'nie był w stanie wysłać') !== false ||
+                stripos($note_text, 'could not send') !== false ||
+                stripos($note_text, 'smtp error') !== false ||
+                stripos($note_text, 'recipient failed') !== false ||
+                stripos($note_text, 'recipients failed') !== false ||
+                stripos($note_text, 'could not authenticate') !== false
+            );
+
+            if (!$looks_like_error || $note_text === '') {
+                continue;
+            }
+
+            // Prefer the useful SMTP/mail part instead of repeating the whole note wrapper.
+            foreach ([
+                'SMTP Error:',
+                'smtp error:',
+                'Could not authenticate',
+                'could not authenticate',
+                'The following recipients failed:',
+                'recipient failed',
+                'recipients failed',
+            ] as $marker) {
+                $pos = stripos($note_text, $marker);
+
+                if ($pos !== false) {
+                    return trim(substr($note_text, $pos));
+                }
+            }
+
+            return $note_text;
+        }
+
+        return '';
+    }
+
+    private function has_notification_error($entry_id) {
+        $entry_id = absint($entry_id);
+
+        if (!$entry_id) {
+            return false;
+        }
+
+        if (array_key_exists($entry_id, $this->notification_error_cache)) {
+            return $this->notification_error_cache[$entry_id];
+        }
+
+        if (!class_exists('GFAPI') || !method_exists('GFAPI', 'get_notes')) {
+            $this->notification_error_cache[$entry_id] = false;
+            return false;
+        }
+
+        $error_notes = GFAPI::get_notes([
+            'entry_id'  => $entry_id,
+            'note_type' => 'notification',
+            'sub_type'  => 'error',
+        ]);
+
+        if (is_array($error_notes) && !empty($error_notes)) {
+            $this->notification_error_cache[$entry_id] = true;
+            return true;
+        }
+
+        $notes = GFAPI::get_notes([
+            'entry_id'  => $entry_id,
+            'note_type' => 'notification',
+        ]);
+
+        if (is_array($notes)) {
+            foreach ($notes as $note) {
+                $values = is_object($note) ? get_object_vars($note) : (array) $note;
+                $sub_type = strtolower(trim((string) ($values['sub_type'] ?? '')));
+
+                if (in_array($sub_type, ['error', 'failed', 'failure'], true)) {
+                    $this->notification_error_cache[$entry_id] = true;
+                    return true;
+                }
+
+                $note_text = '';
+
+                foreach ($values as $value) {
+                    if (is_scalar($value)) {
+                        $note_text .= ' ' . (string) $value;
+                    }
+                }
+
+                if (
+                    stripos($note_text, 'nie był w stanie wysłać') !== false ||
+                    stripos($note_text, 'could not send') !== false ||
+                    stripos($note_text, 'smtp error') !== false ||
+                    stripos($note_text, 'recipient failed') !== false ||
+                    stripos($note_text, 'recipients failed') !== false ||
+                    stripos($note_text, 'could not authenticate') !== false
+                ) {
+                    $this->notification_error_cache[$entry_id] = true;
+                    return true;
+                }
+            }
+        }
+
+        $this->notification_error_cache[$entry_id] = false;
+
+        return false;
+    }
+
+    private function get_failed_notifications_from_gf_notes($form, $entry_id) {
+        $entry_id = absint($entry_id);
+
+        if (!$entry_id || !class_exists('GFAPI') || !method_exists('GFAPI', 'get_notes')) {
+            return [];
+        }
+
+        $notes = GFAPI::get_notes([
+            'entry_id'  => $entry_id,
+            'note_type' => 'notification',
+        ]);
+
+        if (!is_array($notes) || empty($notes)) {
+            return [];
+        }
+
+        $notifications = $form['notifications'] ?? [];
+
+        if (!is_array($notifications) || empty($notifications)) {
+            return [];
+        }
+
+        $failed_note_texts = [];
+
+        foreach ($notes as $note) {
+            $values = is_object($note) ? get_object_vars($note) : (array) $note;
+            $sub_type = strtolower(trim((string) ($values['sub_type'] ?? '')));
+            $note_text = '';
+
+            foreach ($values as $value) {
+                if (is_scalar($value)) {
+                    $note_text .= ' ' . (string) $value;
+                }
+            }
+
+            $looks_failed = (
+                in_array($sub_type, ['error', 'failed', 'failure'], true) ||
+                stripos($note_text, 'nie był w stanie wysłać') !== false ||
+                stripos($note_text, 'could not send') !== false ||
+                stripos($note_text, 'smtp error') !== false ||
+                stripos($note_text, 'recipient failed') !== false ||
+                stripos($note_text, 'recipients failed') !== false ||
+                stripos($note_text, 'could not authenticate') !== false
+            );
+
+            if ($looks_failed) {
+                $failed_note_texts[] = $note_text;
+            }
+        }
+
+        if (empty($failed_note_texts)) {
+            return [];
+        }
+
+        $failed_text = implode(' ', $failed_note_texts);
+        $matches = [];
+
+        foreach ($notifications as $notification_id => $notification) {
+            $notification_id = (string) $notification_id;
+            $name = trim((string) ($notification['name'] ?? ''));
+
+            if (empty($notification['isActive'])) {
+                continue;
+            }
+
+            $matches_id = (
+                $notification_id !== '' &&
+                stripos($failed_text, $notification_id) !== false
+            );
+
+            $matches_name = (
+                $name !== '' &&
+                stripos($failed_text, $name) !== false
+            );
+
+            if (!$matches_id && !$matches_name) {
+                continue;
+            }
+
+            $matches[$notification_id] = [
+                'id'   => $notification_id,
+                'name' => $name !== '' ? $name : ('Powiadomienie ' . $notification_id),
+            ];
+        }
+
+        return array_values($matches);
+    }
+
+    private function get_notifications_from_gf_notes($form, $entry_id) {
+        $entry_id = absint($entry_id);
+
+        if (!$entry_id || !class_exists('GFAPI') || !method_exists('GFAPI', 'get_notes')) {
+            return [];
+        }
+
+        $notes = GFAPI::get_notes([
+            'entry_id'  => $entry_id,
+            'note_type' => 'notification',
+            'sub_type'  => 'success',
+        ]);
+
+        if (!is_array($notes) || empty($notes)) {
+            return [];
+        }
+
+        $notifications = $form['notifications'] ?? [];
+
+        if (!is_array($notifications) || empty($notifications)) {
+            return [];
+        }
+
+        $note_text = '';
+
+        foreach ($notes as $note) {
+            $values = is_object($note) ? get_object_vars($note) : (array) $note;
+
+            foreach ($values as $value) {
+                if (is_scalar($value)) {
+                    $note_text .= ' ' . (string) $value;
+                }
+            }
+        }
+
+        $matches = [];
+
+        foreach ($notifications as $notification_id => $notification) {
+            $notification_id = (string) $notification_id;
+            $name = trim((string) ($notification['name'] ?? ''));
+
+            $matches_id = (
+                $notification_id !== '' &&
+                stripos($note_text, $notification_id) !== false
+            );
+
+            $matches_name = (
+                $name !== '' &&
+                stripos($note_text, $name) !== false
+            );
+
+            if (!$matches_id && !$matches_name) {
+                continue;
+            }
+
+            $matches[] = [
+                'id'   => $notification_id,
+                'name' => $name !== '' ? $name : ('Powiadomienie ' . $notification_id),
+            ];
+        }
+
+        return $matches;
+    }
+
+    private function has_sent_notification($entry_id) {
+        $entry_id = absint($entry_id);
+
+        if (!$entry_id) {
+            return false;
+        }
+
+        if (array_key_exists($entry_id, $this->notification_sent_cache)) {
+            return $this->notification_sent_cache[$entry_id];
+        }
+
+        // pwe_qr_notification_history is written before wp_mail(), so it proves only
+        // that Gravity Forms attempted a notification. It is not proof of delivery.
+        $resend_success = (string) gform_get_meta($entry_id, 'pwe_qr_resend_success');
+
+        if ($resend_success === '1') {
+            $this->notification_sent_cache[$entry_id] = true;
+            return true;
+        }
+
+        if (class_exists('GFAPI') && method_exists('GFAPI', 'get_notes')) {
+            $success_notes = GFAPI::get_notes([
+                'entry_id'  => $entry_id,
+                'note_type' => 'notification',
+                'sub_type'  => 'success',
+            ]);
+
+            if (is_array($success_notes) && !empty($success_notes)) {
+                $this->notification_sent_cache[$entry_id] = true;
+                return true;
+            }
+        }
+
+        $this->notification_sent_cache[$entry_id] = false;
+
+        return false;
+    }
+
+    private function get_notifications_for_language($form, $lang) {
+        $lang = strtoupper(trim((string) $lang));
+        $notifications = $form['notifications'] ?? [];
+        $matches = [];
+
+        if (!is_array($notifications) || $lang === '') {
+            return [];
+        }
+
+        foreach ($notifications as $notification_id => $notification) {
+            if (empty($notification['isActive'])) {
+                continue;
+            }
+
+            $name = trim((string) ($notification['name'] ?? ''));
+
+            if (!preg_match('/(?:-|–|—)\s*' . preg_quote($lang, '/') . '\s*$/iu', $name)) {
+                continue;
+            }
+
+            $matches[(string) $notification_id] = [
+                'id'   => (string) $notification_id,
+                'name' => $name !== '' ? $name : ('Powiadomienie ' . $notification_id),
+            ];
+        }
+
+        return array_values($matches);
+    }
+
+    private function notification_contains_qr($notification) {
+        if (!is_array($notification)) {
+            return false;
+        }
+
+        if (!empty($notification['pwe_attach_qr_image'])) {
+            return true;
+        }
+
+        $message = (string) ($notification['message'] ?? '');
+
+        if ($message === '') {
+            return false;
+        }
+
+        return (bool) preg_match(
+            '/(?:pwe_qr_url_encoded|pwe_qr_url|pwe_qr_img|qr-code|qrcode|qr[_ -]?code)/i',
+            $message
+        );
+    }
+
+    private function get_historical_notifications_for_entry($form, $entry) {
+        $entry_id = absint($entry['id'] ?? 0);
+        $notifications = $form['notifications'] ?? [];
+        $historical = [];
+
+        if (!$entry_id || !is_array($notifications)) {
+            return [];
+        }
+
+        $history = $this->get_notification_history($entry_id);
+
+        foreach ($history as $row) {
+            $notification_id = (string) ($row['id'] ?? '');
+
+            if ($notification_id === '' || !isset($notifications[$notification_id])) {
+                continue;
+            }
+
+            $historical[$notification_id] = [
+                'id'   => $notification_id,
+                'name' => (string) ($notifications[$notification_id]['name'] ?? $row['name'] ?? ''),
+            ];
+        }
+
+        foreach ($this->get_notifications_from_gf_notes($form, $entry_id) as $notification) {
+            $notification_id = (string) ($notification['id'] ?? '');
+
+            if ($notification_id === '' || !isset($notifications[$notification_id])) {
+                continue;
+            }
+
+            $historical[$notification_id] = [
+                'id'   => $notification_id,
+                'name' => (string) ($notification['name'] ?? $notifications[$notification_id]['name'] ?? ''),
+            ];
+        }
+
+        return array_values($historical);
+    }
+
+    private function get_qr_resend_notifications_for_entry($form, $entry) {
+        $notifications = $form['notifications'] ?? [];
+        $result = [];
+
+        if (!is_array($notifications)) {
+            return [];
+        }
+
+        foreach ($this->get_historical_notifications_for_entry($form, $entry) as $historical) {
+            $notification_id = (string) ($historical['id'] ?? '');
+
+            if ($notification_id === '' || !isset($notifications[$notification_id])) {
+                continue;
+            }
+
+            $notification = $notifications[$notification_id];
+
+            // For a QR mismatch resend ONLY the notification that actually carried
+            // the QR code is eligible. Admin/other notifications are not resent
+            // merely because they share the same language.
+            if (!$this->notification_contains_qr($notification)) {
+                continue;
+            }
+
+            $result[$notification_id] = [
+                'id'   => $notification_id,
+                'name' => (string) ($notification['name'] ?? $historical['name'] ?? ''),
+            ];
+        }
+
+        return array_values($result);
+    }
+
+    private function get_never_sent_notifications_for_entry($form, $entry) {
+        $entry_id = absint($entry['id'] ?? 0);
+
+        if (!$entry_id) {
+            return [];
+        }
+
+        $result = [];
+
+        // First use exactly the same user-facing notification resolution as the audit table.
+        // If the audit already knows that this entry should use e.g. "Platyna" or
+        // "Dziękujemy za rejestrację na Targi", use that exact notification.
+        $email = $this->get_entry_email(
+            $entry,
+            $this->get_email_field_ids($form)
+        );
+
+        $match = $this->get_notification_for_entry($form, $entry, $email);
+
+        if (
+            empty($match['ambiguous']) &&
+            (
+                !empty($match['id']) ||
+                !empty($match['ids'])
+            )
+        ) {
+            $ids = !empty($match['ids']) && is_array($match['ids'])
+                ? $match['ids']
+                : [(string) ($match['id'] ?? '')];
+
+            foreach ($ids as $notification_id) {
+                $notification_id = (string) $notification_id;
+
+                if ($notification_id === '') {
+                    continue;
+                }
+
+                $notification = $form['notifications'][$notification_id] ?? null;
+
+                if (!$notification || empty($notification['isActive'])) {
+                    continue;
+                }
+
+                if (!$this->notification_conditional_logic_passes($notification, $form, $entry)) {
+                    continue;
+                }
+
+                $result[$notification_id] = [
+                    'id'   => $notification_id,
+                    'name' => (string) ($notification['name'] ?? ('Powiadomienie ' . $notification_id)),
+                ];
+            }
+        }
+
+        // For entries where NOTHING was ever sent, also include matching active
+        // Admin Notification(s). This is intentionally limited to admin notifications;
+        // we still do not resend every active notification in the form.
+        foreach (($form['notifications'] ?? []) as $notification_id => $notification) {
+            if (empty($notification['isActive'])) {
+                continue;
+            }
+
+            $name = (string) ($notification['name'] ?? '');
+
+            if (stripos($name, 'Admin Notification') === false) {
+                continue;
+            }
+
+            if (!$this->notification_conditional_logic_passes($notification, $form, $entry)) {
+                continue;
+            }
+
+            $notification_id = (string) $notification_id;
+
+            if ($notification_id === '') {
+                continue;
+            }
+
+            $result[$notification_id] = [
+                'id'   => $notification_id,
+                'name' => $name !== '' ? $name : ('Powiadomienie ' . $notification_id),
+            ];
+        }
+
+        if (!empty($result)) {
+            return array_values($result);
+        }
+
+        // Final fallback for newer multilingual forms where no notification could
+        // be resolved by recipient/current configuration.
+        $source_url = (string) ($entry['source_url'] ?? '');
+        $lang = $this->detect_language_from_source_url($source_url);
+        $notifications = $this->get_notifications_for_language($form, $lang);
+
+        foreach ($notifications as $notification) {
+            $notification_id = (string) ($notification['id'] ?? '');
+            $name = (string) ($notification['name'] ?? '');
+
+            if ($notification_id === '') {
+                continue;
+            }
+
+            $form_notification = $form['notifications'][$notification_id] ?? null;
+
+            if (!$form_notification || empty($form_notification['isActive'])) {
+                continue;
+            }
+
+            if (!$this->notification_conditional_logic_passes($form_notification, $form, $entry)) {
+                continue;
+            }
+
+            $is_admin = stripos($name, 'Admin Notification') !== false;
+            $is_registration = stripos($name, 'Registration') !== false;
+
+            if (!$is_admin && !$is_registration) {
+                continue;
+            }
+
+            $result[$notification_id] = [
+                'id'   => $notification_id,
+                'name' => $name,
+            ];
+        }
+
+        return array_values($result);
+    }
+
+    private function get_resend_notifications_for_entry($form, $entry, $comparison = '') {
+        $entry_id = absint($entry['id'] ?? 0);
+
+        if (!$entry_id) {
+            return [];
+        }
+
+        // If the original send failed, use the EXACT notification(s) that Gravity Forms
+        // recorded as failed for this entry. This is especially important for legacy
+        // qr-code forms whose notification names do not follow the new naming convention.
+        $failed_notifications = $this->get_failed_notifications_from_gf_notes($form, $entry_id);
+
+        if (!empty($failed_notifications) && !$this->has_sent_notification($entry_id)) {
+            return $failed_notifications;
+        }
+
+        $has_sent = $this->has_sent_notification($entry_id);
+
+        if (!$has_sent) {
+            return $this->get_never_sent_notifications_for_entry($form, $entry);
+        }
+
+        if ($comparison === 'bad') {
+            return $this->get_qr_resend_notifications_for_entry($form, $entry);
+        }
+
+        return [];
+    }
+
+    private function form_has_active_notifications($form) {
+        $notifications = $form['notifications'] ?? [];
+
+        if (!is_array($notifications) || empty($notifications)) {
+            return false;
+        }
+
+        foreach ($notifications as $notification) {
+            if (!empty($notification['isActive'])) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private function get_available_notifications($form) {
+        $available = [];
+        $notifications = $form['notifications'] ?? [];
+
+        if (!is_array($notifications)) {
+            return $available;
+        }
+
+        foreach ($notifications as $notification_id => $notification) {
+            if (empty($notification['isActive'])) {
+                continue;
+            }
+
+            $available[(string) $notification_id] = [
+                'id'   => (string) $notification_id,
+                'name' => (string) ($notification['name'] ?? ('Powiadomienie ' . $notification_id)),
+            ];
+        }
+
+        return $available;
+    }
+
+    private function render_notification_column($match, $resend_notification_names = []) {
+        $html = $this->render_notification_match($match);
+
+        if (!empty($resend_notification_names) && is_array($resend_notification_names)) {
+            $names = array_values(array_filter(array_map('strval', $resend_notification_names)));
+
+            if (!empty($names)) {
+                $html .= '<div class="pwe-qr-resend-notifications">' .
+                    '<strong>Resend:</strong> ' .
+                    esc_html(implode(' + ', $names)) .
+                    '</div>';
+            }
+        }
+
+        return $html;
+    }
+
+    private function render_notification_match($match, $form = [], $entry_id = 0, $available_notifications = []) {
         if (!empty($match['ambiguous'])) {
             $names = array_values($match['candidates'] ?? []);
 
-            return '<div class="pwe-qr-notification"><span class="pwe-qr-status none">Niejednoznaczne</span><small>' .
+            $html = '<div class="pwe-qr-notification"><span class="pwe-qr-status none">Niejednoznaczne</span><small>' .
                 esc_html(implode(', ', $names)) .
-                '</small></div>';
+                '</small>';
+
+            $html .= $this->render_manual_notification_select($entry_id, $available_notifications);
+            $html .= '</div>';
+
+            return $html;
         }
 
         if (empty($match['id'])) {
-            return '<div class="pwe-qr-notification"><span class="pwe-qr-status none">Nie ustalono</span><small>Brak historycznego zapisu i brak jednoznacznego powiadomienia do tego e-maila.</small></div>';
+            $html = '<div class="pwe-qr-notification"><span class="pwe-qr-status none">Nie ustalono</span><small>Brak historycznego zapisu i brak jednoznacznego powiadomienia do tego e-maila.</small>';
+
+            $html .= $this->render_manual_notification_select($entry_id, $available_notifications);
+            $html .= '</div>';
+
+            return $html;
         }
 
-        $source = ($match['source'] ?? '') === 'history'
-            ? 'zapisane przy wysyłce'
-            : 'wykryte z aktualnej konfiguracji formularza';
+        if (
+            ($match['source'] ?? '') === 'history' ||
+            ($match['source'] ?? '') === 'gf_notes'
+        ) {
+            $source = 'zapisane przy wysyłce';
+        } elseif (($match['source'] ?? '') === 'source_url') {
+            $source = 'dobrane automatycznie z języka źródłowego URL: ' . esc_html($match['lang'] ?? '');
+        } else {
+            $source = 'wykryte z aktualnej konfiguracji formularza';
+        }
+
+        $names = !empty($match['names']) && is_array($match['names'])
+            ? $match['names']
+            : [($match['name'] ?? '')];
+
+        $names = array_values(array_filter(array_map('strval', $names)));
 
         return '<div class="pwe-qr-notification"><strong>' .
-            esc_html($match['name'] ?? '') .
-            '</strong><small>ID: ' . esc_html($match['id']) . ' · ' . esc_html($source) . '</small></div>';
+            esc_html(implode(' + ', $names)) .
+            '</strong><small>' . esc_html($source) . '</small></div>';
+    }
+
+    private function render_manual_notification_select($entry_id, $available_notifications) {
+        if (empty($available_notifications)) {
+            return '<small>Brak aktywnych powiadomień w formularzu.</small>';
+        }
+
+        $html = '<select class="pwe-qr-manual-notification" data-entry-id="' . esc_attr(absint($entry_id)) . '">';
+        $html .= '<option value="">Wybierz powiadomienie…</option>';
+
+        foreach ($available_notifications as $notification) {
+            $id = (string) ($notification['id'] ?? '');
+            $name = (string) ($notification['name'] ?? '');
+
+            if ($id === '') {
+                continue;
+            }
+
+            $label = $name !== '' ? $name . ' (ID: ' . $id . ')' : 'ID: ' . $id;
+            $html .= '<option value="' . esc_attr($id) . '">' . esc_html($label) . '</option>';
+        }
+
+        $html .= '</select>';
+
+        return $html;
     }
 
     private function notification_conditional_logic_passes($notification, $form, $entry) {
@@ -1001,12 +2774,12 @@ class PWE_QR_Audit_Tool {
         return false;
     }
 
-    private function render_filters($active_forms, $selected_form_id, $search, $status_filter) {
+    private function render_filters($active_forms, $selected_form_id, $search, $status_filter, $notification_filter, $per_page) {
         echo '<form method="get" class="pwe-qr-filters">';
         echo '<input type="hidden" name="page" value="pwe-qr-audit">';
 
         echo '<select name="audit_form_id">';
-        echo '<option value="0">Wszystkie formularze z feedem PWE QR</option>';
+        echo '<option value="0">Wszystkie formularze z feedem QR</option>';
 
         foreach ($active_forms as $form_id => $form) {
             echo '<option value="' . absint($form_id) . '" ' . selected($selected_form_id, $form_id, false) . '>' .
@@ -1017,16 +2790,32 @@ class PWE_QR_Audit_Tool {
         echo '</select>';
 
         echo '<select name="audit_status">';
-        echo '<option value="" ' . selected($status_filter, '', false) . '>Wszystkie statusy</option>';
+        echo '<option value="" ' . selected($status_filter, '', false) . '>Wszystkie statusy QR</option>';
         echo '<option value="ok" ' . selected($status_filter, 'ok', false) . '>Zgodne</option>';
         echo '<option value="bad" ' . selected($status_filter, 'bad', false) . '>Rozbieżne</option>';
         echo '<option value="none" ' . selected($status_filter, 'none', false) . '>Brak danych</option>';
         echo '</select>';
 
+        echo '<select name="audit_notification">';
+        echo '<option value="" ' . selected($notification_filter, '', false) . '>Wszystkie powiadomienia</option>';
+        echo '<option value="none_configured" ' . selected($notification_filter, 'none_configured', false) . '>Brak powiadomień</option>';
+        echo '<option value="missing" ' . selected($notification_filter, 'missing', false) . '>Nie wysłane</option>';
+        echo '<option value="error" ' . selected($notification_filter, 'error', false) . '>Błąd wysyłki</option>';
+        echo '<option value="sent" ' . selected($notification_filter, 'sent', false) . '>Powiadomienie wysłane</option>';
+        echo '<option value="resend" ' . selected($notification_filter, 'resend', false) . '>Resend wysłany</option>';
+        echo '</select>';
+
+        echo '<select name="audit_per_page" title="Liczba wpisów na stronę">';
+        foreach ([100, 200, 300, 500] as $page_size) {
+            echo '<option value="' . absint($page_size) . '" ' . selected($per_page, $page_size, false) . '>' .
+                absint($page_size) . ' / strona</option>';
+        }
+        echo '</select>';
+
         echo '<input type="search" name="audit_search" value="' . esc_attr($search) . '" placeholder="Entry ID lub e-mail">';
         echo '<button type="submit" class="button button-secondary">Filtruj</button>';
 
-        if ($selected_form_id || $search !== '' || $status_filter !== '') {
+        if ($selected_form_id || $search !== '' || $status_filter !== '' || $notification_filter !== '') {
             echo '<a class="button" href="' . esc_url(admin_url('admin.php?page=pwe-qr-audit')) . '">Wyczyść</a>';
         }
 
@@ -1093,7 +2882,7 @@ class PWE_QR_Audit_Tool {
 
         if ($selected_form_id) {
             if (!isset($active_forms[$selected_form_id])) {
-                wp_die('Wybrany formularz nie ma aktywnego feedu PWE QR.');
+                wp_die('Wybrany formularz nie ma aktywnego feedu pwe_qr ani qr-code.');
             }
             $active_forms = [$selected_form_id => $active_forms[$selected_form_id]];
         }
@@ -1166,8 +2955,17 @@ class PWE_QR_Audit_Tool {
                         }
                     }
 
-                    $qr_url = (string) gform_get_meta($entry_id, 'pwe_qr_code_url');
-                    $saved_value = $this->extract_qr_value($qr_url);
+                    $saved_qr = $this->get_entry_saved_qr($entry_id, $feeds);
+                    $qr_url = (string) ($saved_qr['url'] ?? '');
+                    $saved_value = (string) ($saved_qr['value'] ?? '');
+
+                    if ($saved_value === '' && $qr_url !== '') {
+                        $saved_value = $this->extract_qr_value($qr_url);
+                    }
+
+                    if ($saved_value === '') {
+                        $saved_value = $this->get_legacy_derived_qr_value($entry_id, $feeds);
+                    }
 
                     if ($saved_value === '') {
                         continue;
@@ -1231,7 +3029,7 @@ class PWE_QR_Audit_Tool {
         return ['feed' => '', 'value' => ''];
     }
 
-    private function get_entries_page($active_form_ids, $selected_form_id, $search, $status_filter, $page) {
+    private function get_entries_page($active_form_ids, $selected_form_id, $search, $status_filter, $notification_filter, $page) {
         global $wpdb;
 
         if (empty($active_form_ids)) {
@@ -1239,7 +3037,7 @@ class PWE_QR_Audit_Tool {
                 'entries'   => [],
                 'total'     => 0,
                 'all_total' => 0,
-                'counts'    => ['ok' => 0, 'bad' => 0, 'none' => 0, 'resend' => 0],
+                'counts'    => ['ok' => 0, 'bad' => 0, 'none' => 0, 'notification_none' => 0, 'notification_missing' => 0, 'notification_error' => 0, 'resend' => 0],
             ];
         }
 
@@ -1281,7 +3079,18 @@ class PWE_QR_Audit_Tool {
 
         $list_sql = "SELECT e.id, e.form_id, e.date_created,
                             qm.meta_value AS pwe_qr_code_url,
-                            rqm.meta_value AS pwe_qr_resend_code_url
+                            (
+                                SELECT oqm.meta_value
+                                FROM {$meta_table} oqm
+                                WHERE oqm.entry_id = e.id
+                                  AND oqm.meta_key LIKE 'qr-code_feed_%_url'
+                                ORDER BY oqm.id DESC
+                                LIMIT 1
+                            ) AS legacy_qr_code_url,
+                            rqm.meta_value AS pwe_qr_resend_code_url,
+                            rsa.meta_value AS pwe_qr_resend_sent_at,
+                            rsu.meta_value AS pwe_qr_resend_success,
+                            nh.meta_value AS pwe_qr_notification_history
                      FROM {$entry_table} e
                      LEFT JOIN {$meta_table} qm
                        ON qm.entry_id = e.id
@@ -1289,6 +3098,15 @@ class PWE_QR_Audit_Tool {
                      LEFT JOIN {$meta_table} rqm
                        ON rqm.entry_id = e.id
                       AND rqm.meta_key = 'pwe_qr_resend_code_url'
+                     LEFT JOIN {$meta_table} rsa
+                       ON rsa.entry_id = e.id
+                      AND rsa.meta_key = 'pwe_qr_resend_sent_at'
+                     LEFT JOIN {$meta_table} rsu
+                       ON rsu.entry_id = e.id
+                      AND rsu.meta_key = 'pwe_qr_resend_success'
+                     LEFT JOIN {$meta_table} nh
+                       ON nh.entry_id = e.id
+                      AND nh.meta_key = 'pwe_qr_notification_history'
                      WHERE {$where_sql}
                      ORDER BY e.id DESC";
 
@@ -1296,7 +3114,8 @@ class PWE_QR_Audit_Tool {
         $rows = (array) $wpdb->get_results($list_query, ARRAY_A);
 
         $feeds_cache = [];
-        $counts = ['ok' => 0, 'bad' => 0, 'none' => 0, 'resend' => 0];
+        $forms_cache = [];
+        $counts = ['ok' => 0, 'bad' => 0, 'none' => 0, 'notification_none' => 0, 'notification_missing' => 0, 'notification_error' => 0, 'resend' => 0];
         $filtered_rows = [];
 
         foreach ($rows as $row) {
@@ -1311,19 +3130,77 @@ class PWE_QR_Audit_Tool {
                 $feeds_cache[$form_id] = $this->get_pwe_feeds($form_id);
             }
 
-            $saved_value = $this->extract_qr_value((string) ($row['pwe_qr_code_url'] ?? ''));
-            $comparison = $this->compare_entry_qr_light($form_id, $entry_id, $feeds_cache[$form_id], $saved_value);
-
-            $counts[$comparison]++;
-
-            if (!empty($row['pwe_qr_resend_code_url'])) {
-                $counts['resend']++;
+            if (!isset($forms_cache[$form_id])) {
+                $form = GFAPI::get_form($form_id);
+                $forms_cache[$form_id] = (!is_wp_error($form) && is_array($form))
+                    ? $form
+                    : [];
             }
 
-            $row['comparison'] = $comparison;
+            $saved_qr_url = (string) ($row['pwe_qr_code_url'] ?? '');
 
-            if ($status_filter !== '' && $comparison !== $status_filter) {
+            if ($saved_qr_url === '') {
+                $saved_qr_url = (string) ($row['legacy_qr_code_url'] ?? '');
+            }
+
+            $saved_value = $this->extract_qr_value($saved_qr_url);
+
+            if ($saved_value === '') {
+                $saved_value = $this->get_legacy_derived_qr_value(
+                    $entry_id,
+                    $feeds_cache[$form_id]
+                );
+            }
+
+            $comparison = $this->compare_entry_qr_light($form_id, $entry_id, $feeds_cache[$form_id], $saved_value);
+
+            $has_resend = (
+                (string) ($row['pwe_qr_resend_success'] ?? '') === '1' ||
+                !empty($row['pwe_qr_resend_code_url'])
+            );
+            $has_sent_notification = $this->has_sent_notification($entry_id);
+            $has_notification_error = $this->has_notification_error($entry_id);
+            $has_active_notifications = $this->form_has_active_notifications($forms_cache[$form_id]);
+
+            $row['comparison'] = $comparison;
+            $row['notification_status'] = $has_resend
+                ? 'resend'
+                : (
+                    $has_sent_notification
+                        ? 'sent'
+                        : ($has_notification_error ? 'error' : ($has_active_notifications ? 'missing' : 'none_configured'))
+                );
+
+            // "Nie wysłane" is intentionally separate from QR comparison.
+            // If no message was sent, the client did not receive the QR and we
+            // should not classify that entry as Zgodny/Rozbieżny.
+            $effective_comparison = (
+                !$has_sent_notification &&
+                !$has_resend
+            ) ? 'unsent' : $comparison;
+
+            if ($status_filter !== '' && $effective_comparison !== $status_filter) {
                 continue;
+            }
+
+            if ($notification_filter !== '' && $row['notification_status'] !== $notification_filter) {
+                continue;
+            }
+
+            if ($effective_comparison === 'unsent') {
+                if ($has_notification_error) {
+                    $counts['notification_error']++;
+                } elseif (!$has_active_notifications) {
+                    $counts['notification_none']++;
+                } else {
+                    $counts['notification_missing']++;
+                }
+            } else {
+                $counts[$comparison]++;
+
+                if ($has_resend) {
+                    $counts['resend']++;
+                }
             }
 
             $filtered_rows[] = $row;
@@ -1372,7 +3249,7 @@ class PWE_QR_Audit_Tool {
         return 'bad';
     }
 
-    private function render_pagination($total, $page, $selected_form_id, $search, $status_filter) {
+    private function render_pagination($total, $page, $selected_form_id, $search, $status_filter, $notification_filter, $per_page) {
         $total_pages = max(1, (int) ceil($total / $this->per_page));
 
         if ($total_pages <= 1) {
@@ -1384,8 +3261,10 @@ class PWE_QR_Audit_Tool {
                 'page'          => 'pwe-qr-audit',
                 'audit_form_id' => $selected_form_id ?: false,
                 'audit_search'  => $search !== '' ? $search : false,
-                'audit_status'  => $status_filter !== '' ? $status_filter : false,
-                'audit_paged'   => '%#%',
+                'audit_status'       => $status_filter !== '' ? $status_filter : false,
+                'audit_notification' => $notification_filter !== '' ? $notification_filter : false,
+                'audit_per_page'     => $per_page,
+                'audit_paged'        => '%#%',
             ],
             admin_url('admin.php')
         );
@@ -1410,13 +3289,22 @@ class PWE_QR_Audit_Tool {
     }
 
     private function get_pwe_feeds($form_id) {
-        $feeds = GFAPI::get_feeds(null, $form_id, 'pwe_qr');
+        $all_feeds = [];
 
-        if (is_wp_error($feeds) || empty($feeds) || !is_array($feeds)) {
-            return [];
+        foreach (['pwe_qr', 'qr-code'] as $addon_slug) {
+            $feeds = GFAPI::get_feeds(null, $form_id, $addon_slug);
+
+            if (is_wp_error($feeds) || empty($feeds) || !is_array($feeds)) {
+                continue;
+            }
+
+            foreach ($feeds as $feed) {
+                $feed['_qr_system'] = $addon_slug;
+                $all_feeds[] = $feed;
+            }
         }
 
-        return $feeds;
+        return $all_feeds;
     }
 
     private function get_feed_name($feed) {
@@ -1447,7 +3335,7 @@ class PWE_QR_Audit_Tool {
 
     private function render_feeds_for_entry($feeds) {
         if (empty($feeds)) {
-            return '<span class="pwe-qr-status none">Brak feedu pwe_qr</span>';
+            return '<span class="pwe-qr-status none">Brak feedu QR</span>';
         }
 
         $html = '';
@@ -1456,9 +3344,10 @@ class PWE_QR_Audit_Tool {
             $name = $this->get_feed_name($feed);
             $keys = $this->get_feed_custom_keys($feed);
             $active = !empty($feed['is_active']);
+            $system = (string) ($feed['_qr_system'] ?? 'pwe_qr');
 
             $html .= '<div class="pwe-qr-feed ' . ($active ? 'is-active' : 'is-inactive') . '">';
-            $html .= '<strong>' . esc_html($name ?: '(bez nazwy)') . '</strong> · ' . ($active ? 'Aktywny' : 'Nieaktywny') . '<br>';
+            $html .= '<strong>' . esc_html($name ?: '(bez nazwy)') . '</strong> · <code>' . esc_html($system) . '</code> · ' . ($active ? 'Aktywny' : 'Nieaktywny') . '<br>';
             $html .= 'key 1: <code>' . esc_html($keys[0] ?: '—') . '</code><br>';
             $html .= 'key 2: <code>' . esc_html($keys[1] ?: '—') . '</code>';
             $html .= '</div>';
@@ -1489,6 +3378,113 @@ class PWE_QR_Audit_Tool {
         }
 
         return '';
+    }
+
+    private function get_legacy_derived_qr_value($entry_id, $feeds) {
+        $entry_id = absint($entry_id);
+
+        if (!$entry_id || empty($feeds)) {
+            return '';
+        }
+
+        foreach ($feeds as $feed) {
+            if (($feed['_qr_system'] ?? '') !== 'qr-code' || empty($feed['is_active'])) {
+                continue;
+            }
+
+            [$key1, $key2] = $this->get_feed_custom_keys($feed);
+
+            $key1 = trim((string) $key1);
+            $key2 = trim((string) $key2);
+
+            if ($key1 === '') {
+                continue;
+            }
+
+            return $key1 . $entry_id . $key2 . $entry_id;
+        }
+
+        return '';
+    }
+
+    private function get_entry_saved_qr($entry_id, $feeds) {
+        $entry_id = absint($entry_id);
+
+        if (!$entry_id) {
+            return [
+                'url'      => '',
+                'value'    => '',
+                'system'   => '',
+                'feed_id'  => 0,
+                'meta_key' => '',
+            ];
+        }
+
+        // New PWE QR system.
+        $pwe_url = (string) gform_get_meta($entry_id, 'pwe_qr_code_url');
+
+        if ($pwe_url !== '') {
+            return [
+                'url'      => $pwe_url,
+                'value'    => $this->extract_qr_value($pwe_url),
+                'system'   => 'pwe_qr',
+                'feed_id'  => 0,
+                'meta_key' => 'pwe_qr_code_url',
+            ];
+        }
+
+        // Legacy SpGfQRCode system stores one URL per feed:
+        // qr-code_feed_{feed_id}_url.
+        foreach ($feeds as $feed) {
+            if (($feed['_qr_system'] ?? '') !== 'qr-code') {
+                continue;
+            }
+
+            $feed_id = absint($feed['id'] ?? 0);
+
+            if (!$feed_id) {
+                continue;
+            }
+
+            $meta_key = 'qr-code_feed_' . $feed_id . '_url';
+            $legacy_url = (string) gform_get_meta($entry_id, $meta_key);
+
+            if ($legacy_url === '') {
+                continue;
+            }
+
+            $derived_value = $this->get_legacy_derived_qr_value($entry_id, $feeds);
+
+            return [
+                'url'      => $legacy_url,
+                'value'    => $derived_value !== ''
+                    ? $derived_value
+                    : $this->extract_qr_value($legacy_url),
+                'system'   => 'qr-code',
+                'feed_id'  => $feed_id,
+                'meta_key' => $meta_key,
+            ];
+        }
+
+        $derived_legacy_value = $this->get_legacy_derived_qr_value($entry_id, $feeds);
+
+        if ($derived_legacy_value !== '') {
+            return [
+                'url'      => '',
+                'value'    => $derived_legacy_value,
+                'system'   => 'qr-code',
+                'feed_id'  => 0,
+                'meta_key' => '',
+            ];
+        }
+
+        return [
+            'url'      => '',
+            'value'    => '',
+            'system'   => '',
+            'feed_id'  => 0,
+            'meta_key' => '',
+        ];
     }
 
     private function extract_qr_value($qr_url) {
@@ -1532,7 +3528,7 @@ class PWE_QR_Audit_Tool {
     }
 
     private function render_saved_qr($qr_url, $qr_value) {
-        if ($qr_url === '') {
+        if ($qr_url === '' && $qr_value === '') {
             return '<span class="pwe-qr-status none">Brak zapisanego QR</span>';
         }
 
@@ -1542,7 +3538,11 @@ class PWE_QR_Audit_Tool {
             $html .= '<div class="pwe-qr-code"><strong>' . esc_html($qr_value) . '</strong></div>';
         }
 
-        $html .= '<a class="pwe-qr-url" href="' . esc_url($qr_url) . '" target="_blank" rel="noopener noreferrer">Otwórz zapisany QR</a>';
+        if ($qr_url !== '') {
+            $html .= '<a class="pwe-qr-url" href="' . esc_url($qr_url) . '" target="_blank" rel="noopener noreferrer">Otwórz zapisany QR</a>';
+        } else {
+            $html .= '<small>wartość wyliczona z feedu qr-code</small>';
+        }
 
         return $html;
     }
