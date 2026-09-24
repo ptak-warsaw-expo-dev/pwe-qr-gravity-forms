@@ -254,7 +254,7 @@ class PWE_QR_Entry_Meta {
             'jakub.chola@warsawexpo.eu',
         ];
 
-        $subject = '[PWE QR WARNING]['. $domain .'] - Prefix feedu różni się od shortcode';
+        $subject = '[PWE QR WARNING] Prefix feedu różni się od shortcode - ' . $domain;
 
         $entry_url = admin_url(
             'admin.php?page=gf_entries&view=entry&id=' . $form_id . '&lid=' . $entry_id
@@ -449,7 +449,7 @@ class PWE_QR_Entry_Meta {
             return;
         }
 
-        $subject = '[PWE QR ALERT]['. $domain .'] - Rozbieżność QR';
+        $subject = '[PWE QR ALERT] Rozbieżność QR - ' . $domain;
 
         $entry_url = admin_url(
             'admin.php?page=gf_entries&view=entry&id=' .

@@ -23,6 +23,12 @@ The plugin allows you to create QR code feeds inside Gravity Forms, use QR codes
 - Duplicates QR feeds when a Gravity Form is duplicated
 - Supports private GitHub-based plugin updates
 
+### QR audit and historical backfill
+
+The QR audit panel and the tool for filling missing historical QR metadata are **not included in this plugin anymore**.
+
+They are maintained in the **PWE System** plugin inside the `qr-audit` module. `PWE QR Gravity Forms` remains responsible for QR generation, Gravity Forms feeds, notifications, confirmations, image rendering, and the metadata required by the central audit module.
+
 ---
 
 ## Requirements
@@ -278,6 +284,8 @@ wp_gf_entry_meta
 
 Only the first active QR feed for the form is saved into this metadata key.
 
+Notification history metadata is still stored by this plugin because it is used by the centralized `qr-audit` module in **PWE System**.
+
 ---
 
 ## QR Code URL Rendering
@@ -339,6 +347,17 @@ When duplicating a Gravity Form:
 - Feed name and random value are preserved
 - Form-based prefix is regenerated for the new form ID
 - Duplicate QR feeds with the same feed name are skipped
+
+---
+
+## Maintenance Tools
+
+Operational maintenance is separated from QR generation:
+
+- **PWE QR Gravity Forms** – creates and stores QR data and integrates with Gravity Forms.
+- **PWE System → qr-audit** – provides QR audit, resend tools, error/status analysis, and historical QR backfill.
+
+There is no local fallback audit or backfill tool in this plugin.
 
 ---
 

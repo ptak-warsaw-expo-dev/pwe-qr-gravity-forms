@@ -58,7 +58,7 @@ class PWE_QR_Notifications {
         add_action('phpmailer_init', [$this, 'inject_qr_attachments']);
 
         // Record which Gravity Forms notification was processed for each entry.
-        // This gives the audit tool an exact notification ID for future registrations/resends.
+        // Persist notification IDs so external maintenance tools (for example PWE System) can identify historical sends.
         add_filter('gform_pre_send_email', [$this, 'record_sent_notification'], 100, 4);
     }
 
@@ -142,7 +142,7 @@ class PWE_QR_Notifications {
                     $data['logo_url'] ?? ''
                 );
 
-                // Persist the same QR URL in entry meta. This keeps the entry/audit
+                // Persist the same QR URL in entry meta. This keeps the entry and external maintenance tools
                 // in sync even when the QR is used only as an attachment.
                 $this->persist_qr_meta($form_id, $entry, $data);
 
@@ -280,7 +280,7 @@ class PWE_QR_Notifications {
      * Record the notification that Gravity Forms is about to send for an entry.
      *
      * Gravity Forms does not persist the notification ID on the entry by default.
-     * Keeping a short history lets the QR audit resend the same user notification later.
+     * Keeping a short history lets external maintenance tools identify the exact notification later.
      *
      * @param array  $email
      * @param string $message_format

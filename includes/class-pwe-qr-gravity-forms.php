@@ -65,12 +65,6 @@ if (!class_exists('PWE_QR_Gravity_Forms')) {
             // QR shortcodes on confirmation.
             new PWE_QR_Confirmations($this->qr, $this->image_controller);
 
-            // Temporary tool for filling missing QR metadata in historical entries.
-            new PWE_QR_Backfill_Tool($entry_meta);
-
-            // Read-only audit of QR feeds and historical entry QR values.
-            new PWE_QR_Audit_Tool($this->qr);
-
             // Register the Gravity Forms Add-On after GF is loaded.
             add_action('gform_loaded', [$this, 'register_gf_addon'], 5);
         }
