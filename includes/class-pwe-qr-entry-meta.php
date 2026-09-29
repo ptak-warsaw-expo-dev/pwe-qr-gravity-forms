@@ -209,18 +209,29 @@ class PWE_QR_Entry_Meta {
             ? absint(get_current_blog_id())
             : 0;
 
-        // Explicit per-site + per-form + per-day key.
-        // Example: pwe_qr_feed_prefix_warning_1_271_20260917
-        // This intentionally does NOT share the throttle between different forms.
-        $daily_warning_key = sprintf(
+        // Atomic once-per-day lock for this exact site + form.
+        // add_option() is atomic at the database level, so even near-simultaneous
+        // registrations cannot send duplicate warnings before another request
+        // has time to save a transient.
+        $daily_warning_option = sprintf(
             'pwe_qr_feed_prefix_warning_%d_%d_%s',
             $blog_id,
             $form_id,
             $warning_day
         );
 
-        // Max one prefix warning per calendar day for this exact form.
-        if (get_transient($daily_warning_key)) {
+        // Clean yesterday's lock for this form so these temporary options do not
+        // accumulate indefinitely.
+        $yesterday = wp_date('Ymd', current_time('timestamp') - DAY_IN_SECONDS);
+        delete_option(sprintf(
+            'pwe_qr_feed_prefix_warning_%d_%d_%s',
+            $blog_id,
+            $form_id,
+            $yesterday
+        ));
+
+        // Only the request that creates the option is allowed to send the warning.
+        if (!add_option($daily_warning_option, current_time('mysql'), '', 'no')) {
             return;
         }
 
@@ -254,7 +265,7 @@ class PWE_QR_Entry_Meta {
             'jakub.chola@warsawexpo.eu',
         ];
 
-        $subject = '[PWE QR WARNING] Prefix feedu różni się od shortcode - ' . $domain;
+        $subject = '[PWE QR WARNING][' . $domain . '] - Prefix feedu różni się od shortcode';
 
         $entry_url = admin_url(
             'admin.php?page=gf_entries&view=entry&id=' . $form_id . '&lid=' . $entry_id
@@ -290,11 +301,12 @@ class PWE_QR_Entry_Meta {
         ]);
 
         if (wp_mail($recipient, $subject, $body, ['Content-Type: text/plain; charset=UTF-8'])) {
-            // The date is part of the key, so a new day automatically gets a fresh slot.
-            set_transient($daily_warning_key, 1, 2 * DAY_IN_SECONDS);
-
             gform_update_meta($entry_id, 'pwe_qr_feed_prefix_warning_hash', $warning_hash, $form_id);
             gform_update_meta($entry_id, 'pwe_qr_feed_prefix_warning_sent_at', current_time('mysql'), $form_id);
+        } else {
+            // If the warning itself could not be sent, release the lock so the next
+            // registration can try again instead of silencing the whole day.
+            delete_option($daily_warning_option);
         }
     }
 

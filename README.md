@@ -23,6 +23,29 @@ The plugin allows you to create QR code feeds inside Gravity Forms, use QR codes
 - Duplicates QR feeds when a Gravity Form is duplicated
 - Supports private GitHub-based plugin updates
 
+### Monitoring alerts
+
+The plugin sends diagnostic alerts to the PWE development team when:
+
+- an active PWE QR feed prefix differs from `[trade_fair_feed_prefix]`; this warning is limited to **one message per form per calendar day**,
+- Gravity Forms reports that a notification e-mail could not be sent. The alert includes the domain, form, entry, notification, recipient, subject, and reported mail error.
+
+The prefix warning subject uses the format:
+
+```text
+[PWE QR WARNING][example.com] - Prefix feedu różni się od shortcode
+```
+
+The mail failure alert uses the format:
+
+```text
+[PWE QR MAIL ERROR][example.com] - Błąd wysyłki Gravity Forms
+```
+
+> Note: the mail failure alert itself uses WordPress `wp_mail()`. If the site's entire mail transport is unavailable, the diagnostic alert may also fail to leave the server.
+
+---
+
 ### QR audit and historical backfill
 
 The QR audit panel and the tool for filling missing historical QR metadata are **not included in this plugin anymore**.
