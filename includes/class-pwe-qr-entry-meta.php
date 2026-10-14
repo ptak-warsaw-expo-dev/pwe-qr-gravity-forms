@@ -222,7 +222,8 @@ class PWE_QR_Entry_Meta {
 
         // Clean yesterday's lock for this form so these temporary options do not
         // accumulate indefinitely.
-        $yesterday = wp_date('Ymd', current_time('timestamp') - DAY_IN_SECONDS);
+        $yesterday = (new DateTimeImmutable('yesterday', wp_timezone()))->format('Ymd');
+
         delete_option(sprintf(
             'pwe_qr_feed_prefix_warning_%d_%d_%s',
             $blog_id,
@@ -300,13 +301,21 @@ class PWE_QR_Entry_Meta {
             $entry_url,
         ]);
 
-        if (wp_mail($recipient, $subject, $body, ['Content-Type: text/plain; charset=UTF-8'])) {
+        $warning_sent = wp_mail(
+            $recipient,
+            $subject,
+            $body,
+            ['Content-Type: text/plain; charset=UTF-8']
+        );
+
+        // IMPORTANT: keep the daily lock after the first send attempt regardless
+        // of wp_mail() result. With multiple recipients an SMTP transport can
+        // deliver the message to some recipients and still report the whole send
+        // as failed. Releasing the lock in that case caused the same form to send
+        // the warning again on every subsequent registration.
+        if ($warning_sent) {
             gform_update_meta($entry_id, 'pwe_qr_feed_prefix_warning_hash', $warning_hash, $form_id);
             gform_update_meta($entry_id, 'pwe_qr_feed_prefix_warning_sent_at', current_time('mysql'), $form_id);
-        } else {
-            // If the warning itself could not be sent, release the lock so the next
-            // registration can try again instead of silencing the whole day.
-            delete_option($daily_warning_option);
         }
     }
 
