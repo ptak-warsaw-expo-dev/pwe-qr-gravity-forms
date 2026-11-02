@@ -6,59 +6,57 @@ if (!defined('ABSPATH')) {
 
 class PWE_QR_Updater {
 
+    private $update_checker = null;
+
     public function __construct() {
         $this->setup_updater();
     }
 
     /**
-     * Retrieving the GitHub key from the database
-     *
-     * @return string|null
+     * Configure Plugin Update Checker for the PWE QR Gravity Forms GitHub repository.
      */
-    private function get_github_key() {
-        global $wpdb;
-
-        $table_name = $wpdb->prefix . 'custom_klavio_setup';
-        if ( $wpdb->get_var( $wpdb->prepare( "SHOW TABLES LIKE %s", $table_name ) ) != $table_name ) {
-            return null;
+    public function setup_updater(): void {
+        if ($this->update_checker !== null) {
+            return;
         }
 
-        $github_pre = $wpdb->prepare(
-            "SELECT klavio_list_id FROM $table_name WHERE klavio_list_name = %s",
-            'github_secret_2'
-        );
-        $github_result = $wpdb->get_results( $github_pre );
-
-        if ( ! empty( $github_result ) ) {
-            return $github_result[0]->klavio_list_id;
-        }
-
-        return null;
-    }
-
-    /**
-     * Setting the auto-update mechanism
-     */
-    private function setup_updater() {
         $checker_file = PWE_QR_GF_PATH . 'plugin-update-checker/plugin-update-checker.php';
 
-        if ( file_exists( $checker_file ) ) {
-            require_once $checker_file;
+        if (!is_file($checker_file)) {
+            return;
+        }
 
-            $updateChecker = Puc_v4_Factory::buildUpdateChecker(
-                'https://github.com/ptak-warsaw-expo-dev/pwe-qr-gravity-forms',
-                PWE_QR_GF_FILE,
-                'pwe-qr-gravity-forms'
-            );
+        require_once $checker_file;
 
-            // Key from the database
-            $githubKey = $this->get_github_key();
-            if ( $githubKey ) {
-                $updateChecker->setAuthentication( $githubKey );
+        if (!class_exists('Puc_v4_Factory')) {
+            return;
+        }
+
+        $this->update_checker = Puc_v4_Factory::buildUpdateChecker(
+            'https://github.com/ptak-warsaw-expo-dev/pwe-qr-gravity-forms/',
+            PWE_QR_GF_FILE,
+            'pwe-qr-gravity-forms'
+        );
+
+        if (!$this->update_checker) {
+            return;
+        }
+
+        // Token from CAP. Required only for a private repository or to avoid
+        // GitHub API rate limits. Public repositories also work without it.
+        $github_key = PWE_System_Functions::get_database_meta_data('github_personal_access_token');
+        if (is_string($github_key) && trim($github_key) !== '') {
+            $this->update_checker->setAuthentication(trim($github_key));
+        }
+
+        // Releases are the source of updates. If a release contains a ZIP
+        // asset, PUC will use it instead of GitHub's automatically generated
+        // source archive.
+        if (method_exists($this->update_checker, 'getVcsApi')) {
+            $api = $this->update_checker->getVcsApi();
+            if ($api && method_exists($api, 'enableReleaseAssets')) {
+                $api->enableReleaseAssets();
             }
-
-            // Downloading assets (release zips)
-            $updateChecker->getVcsApi()->enableReleaseAssets();
         }
     }
 }
